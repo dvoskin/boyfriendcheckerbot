@@ -269,7 +269,8 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   // ── 4. Public records & web mentions (the meat of a name search) ─────────
   const recSeen = new Set<string>();
   const records = all.filter((f) => {
-    if (!['nppes', 'sec', 'courtlistener', 'search', 'fec', 'opencorporates', 'finra'].includes(f.source)) return false;
+    if (!['nppes', 'sec', 'courtlistener', 'search', 'fec', 'opencorporates', 'finra', 'wikipedia', 'academic'].includes(f.source))
+      return false;
     const key = f.url ?? f.title;
     if (recSeen.has(key)) return false;
     recSeen.add(key);
@@ -288,6 +289,18 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
       if (first && f.source !== 'search') rec.push(`  <i>${escapeHtml(first)}</i>`);
     }
     sections.push(rec.join('\n'));
+  }
+
+  // ── 4.5 Hidden accounts & breaches (incl. dating-app signal) ─────────────
+  const breaches = all.filter((f) => f.source === 'hibp');
+  if (breaches.length) {
+    const b = ['🔓 <b>Hidden accounts &amp; leaks</b>', ''];
+    for (const f of breaches) {
+      b.push(`<b>${escapeHtml(f.title)}</b>`);
+      if (f.detail) for (const line of f.detail.split('\n')) b.push(escapeHtml(line));
+    }
+    b.push('', '<i>💡 A dating/adult site here means he had an account there. Leaks also reveal accounts he never mentioned.</i>');
+    sections.push(b.join('\n'));
   }
 
   // ── 5. Contact traces: phone, linked emails & personal sites ─────────────

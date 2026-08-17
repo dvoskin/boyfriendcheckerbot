@@ -33,6 +33,8 @@ export const config = {
   fecKey: opt('FEC_API_KEY') ?? 'DEMO_KEY',
   // OpenCorporates business-registry API token (free tier available).
   openCorporatesToken: opt('OPENCORPORATES_TOKEN'),
+  // HaveIBeenPwned API key ($3.95/mo) — email → data breaches he's been in.
+  hibpKey: opt('HIBP_API_KEY'),
   dataDir: process.env.DATA_DIR ?? './data',
   // How often the watch loop re-checks each watched person, in minutes.
   watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),
