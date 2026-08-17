@@ -1,0 +1,416 @@
+<title>Vetted</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* Committed single visual world: a girly pink landing page. Every color is
+     painted explicitly so it holds on any host ground (light or dark). */
+  :root {
+    --blush: #fff0f6;
+    --blush-2: #ffe4f0;
+    --petal: #ffd9e8;
+    --rose: #ff3d77;
+    --rose-deep: #e21e63;
+    --magenta: #d6249f;
+    --purple: #a11bc4;
+    --plum: #3a0e33;
+    --plum-soft: #7a4d72;
+    --gold: #f7c948;
+    --white: #ffffff;
+    --card: #ffffff;
+    --shadow: 40px 40px 80px rgba(214, 36, 159, 0.12);
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --serif: Georgia, "Times New Roman", serif;
+
+    --maxw: 1120px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--sans);
+    color: var(--plum);
+    background: var(--blush);
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  em, .serif { font-family: var(--serif); font-style: italic; }
+
+  a { color: inherit; text-decoration: none; }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: linear-gradient(135deg, var(--rose), var(--magenta));
+    color: var(--white); font-weight: 800; font-size: 1.05rem;
+    padding: 16px 30px; border-radius: 100px; border: none; cursor: pointer;
+    box-shadow: 0 12px 30px rgba(226, 30, 99, 0.35);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    letter-spacing: 0.2px;
+  }
+  .btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 18px 44px rgba(226, 30, 99, 0.5); }
+  .btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+  .btn.ghost { background: var(--white); color: var(--magenta); box-shadow: 0 8px 20px rgba(214,36,159,0.14); }
+
+  /* ---------- nav ---------- */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(255, 240, 246, 0.82);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(214, 36, 159, 0.1);
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .logo { font-weight: 900; font-size: 1.5rem; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
+  .logo .dot { color: var(--rose); }
+  nav .btn { padding: 11px 22px; font-size: 0.95rem; }
+
+  /* ---------- hero ---------- */
+  .hero { position: relative; padding: 70px 0 90px; overflow: hidden; }
+  .hero-bg {
+    position: absolute; inset: 0; z-index: 0;
+    background: radial-gradient(1200px 600px at 15% -10%, var(--petal), transparent 60%),
+                radial-gradient(900px 500px at 100% 0%, #ffe9c9, transparent 55%),
+                linear-gradient(180deg, var(--blush), var(--blush-2));
+  }
+  #hearts { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+  .hero .wrap { position: relative; z-index: 2; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 40px; align-items: center; }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--white); color: var(--magenta); font-weight: 700; font-size: 0.82rem;
+    padding: 8px 16px; border-radius: 100px; letter-spacing: 0.4px; text-transform: uppercase;
+    box-shadow: 0 6px 18px rgba(214,36,159,0.12); margin-bottom: 22px;
+  }
+  h1 {
+    font-size: clamp(2.6rem, 6vw, 4.3rem); line-height: 1.02; font-weight: 900;
+    letter-spacing: -1.5px; text-wrap: balance; margin-bottom: 20px;
+  }
+  h1 .grad {
+    background: linear-gradient(120deg, var(--rose), var(--magenta) 60%, var(--purple));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .sub { font-size: 1.2rem; color: var(--plum-soft); max-width: 30ch; margin-bottom: 30px; }
+  .cta-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .microcopy { margin-top: 16px; font-size: 0.9rem; color: var(--plum-soft); display: flex; align-items: center; gap: 8px; }
+
+  /* ---------- phone mockup ---------- */
+  .phone {
+    justify-self: center; width: 300px; max-width: 100%;
+    background: #2a0a26; border-radius: 42px; padding: 12px;
+    box-shadow: var(--shadow); position: relative;
+    transform: rotate(2.5deg); transition: transform 0.5s ease;
+  }
+  .phone:hover { transform: rotate(0deg) translateY(-6px); }
+  .phone::before { content: ""; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 90px; height: 7px; background: #4a1f42; border-radius: 10px; }
+  .screen {
+    background: linear-gradient(180deg, #fff, #fff6fb); border-radius: 32px; padding: 34px 16px 18px;
+    height: 500px; overflow: hidden; display: flex; flex-direction: column; gap: 10px;
+  }
+  .msg { border-radius: 16px; padding: 11px 13px; font-size: 0.83rem; opacity: 0; transform: translateY(12px); animation: pop 0.5s forwards; }
+  .msg.me { background: linear-gradient(135deg, var(--rose), var(--magenta)); color: #fff; align-self: flex-end; border-bottom-right-radius: 5px; font-weight: 700; }
+  .msg.bot { background: #fbe3ef; color: var(--plum); align-self: flex-start; border-bottom-left-radius: 5px; }
+  .msg.bot b { color: var(--magenta); }
+  .msg:nth-child(1) { animation-delay: 0.2s; }
+  .msg:nth-child(2) { animation-delay: 0.9s; }
+  .msg:nth-child(3) { animation-delay: 1.7s; }
+  .msg:nth-child(4) { animation-delay: 2.5s; }
+  @keyframes pop { to { opacity: 1; transform: translateY(0); } }
+
+  /* ---------- sections ---------- */
+  section { padding: 84px 0; position: relative; }
+  .kicker { text-align: center; color: var(--rose); font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.8rem; margin-bottom: 12px; }
+  h2 { text-align: center; font-size: clamp(2rem, 4.5vw, 3rem); font-weight: 900; letter-spacing: -1px; text-wrap: balance; margin-bottom: 14px; }
+  .lead { text-align: center; color: var(--plum-soft); font-size: 1.15rem; max-width: 52ch; margin: 0 auto 54px; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .step { background: var(--card); border-radius: 26px; padding: 34px 28px; box-shadow: 0 20px 40px rgba(214,36,159,0.08); position: relative; }
+  .step .n { font-family: var(--serif); font-style: italic; font-size: 2.2rem; color: var(--petal); font-weight: 700; }
+  .step h3 { font-size: 1.35rem; margin: 6px 0 8px; font-weight: 800; }
+  .step p { color: var(--plum-soft); }
+
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .feat { background: var(--card); border-radius: 22px; padding: 26px; transition: transform 0.3s ease, box-shadow 0.3s ease; border: 1px solid rgba(214,36,159,0.06); }
+  .feat:hover { transform: translateY(-6px); box-shadow: 0 24px 44px rgba(214,36,159,0.16); }
+  .feat .ico { font-size: 2rem; margin-bottom: 12px; display: block; }
+  .feat h3 { font-size: 1.1rem; font-weight: 800; margin-bottom: 6px; }
+  .feat p { font-size: 0.95rem; color: var(--plum-soft); }
+
+  /* ---------- pricing ---------- */
+  #pricing { background: linear-gradient(180deg, transparent, rgba(255,217,232,0.5)); }
+  .tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; align-items: stretch; }
+  .tier { background: var(--card); border-radius: 26px; padding: 32px 24px; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(214,36,159,0.08); position: relative; border: 2px solid transparent; }
+  .tier.pop { border-color: var(--rose); transform: scale(1.04); box-shadow: 0 30px 60px rgba(226,30,99,0.22); }
+  .tier .tag { position: absolute; top: -13px; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, var(--rose), var(--magenta)); color: #fff; font-size: 0.72rem; font-weight: 800; padding: 6px 14px; border-radius: 100px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+  .tier h3 { font-size: 1.15rem; font-weight: 800; }
+  .tier .price { font-size: 2.5rem; font-weight: 900; letter-spacing: -1px; margin: 10px 0 2px; }
+  .tier .price span { font-size: 1rem; font-weight: 600; color: var(--plum-soft); }
+  .tier .desc { color: var(--plum-soft); font-size: 0.9rem; min-height: 40px; margin-bottom: 14px; }
+  .tier ul { list-style: none; display: flex; flex-direction: column; gap: 9px; margin-bottom: 22px; flex: 1; }
+  .tier li { font-size: 0.92rem; display: flex; gap: 9px; align-items: flex-start; }
+  .tier li::before { content: "🩷"; font-size: 0.85rem; }
+  .tier .btn { width: 100%; justify-content: center; }
+  .tier.free .btn { background: var(--white); color: var(--magenta); box-shadow: inset 0 0 0 2px var(--petal); }
+
+  /* ---------- trust ---------- */
+  .trust { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .chip { background: var(--white); border-radius: 100px; padding: 12px 22px; font-weight: 700; font-size: 0.92rem; box-shadow: 0 8px 20px rgba(214,36,159,0.1); display: flex; align-items: center; gap: 8px; }
+
+  /* ---------- final cta ---------- */
+  .final { text-align: center; }
+  .final-card {
+    background: linear-gradient(135deg, var(--rose), var(--magenta) 70%, var(--purple));
+    border-radius: 40px; padding: 66px 32px; color: #fff; position: relative; overflow: hidden;
+    box-shadow: 0 40px 80px rgba(214,36,159,0.35);
+  }
+  .final-card h2 { color: #fff; }
+  .final-card .lead { color: rgba(255,255,255,0.9); }
+  .final-card .btn { background: #fff; color: var(--magenta); }
+
+  footer { padding: 40px 0 56px; text-align: center; color: var(--plum-soft); font-size: 0.9rem; }
+  footer .logo { justify-content: center; margin-bottom: 10px; font-size: 1.2rem; }
+  .disclaimer { max-width: 60ch; margin: 14px auto 0; font-size: 0.8rem; opacity: 0.85; }
+
+  /* ---------- reveal animation ---------- */
+  .reveal { opacity: 0; transform: translateY(28px); transition: opacity 0.7s ease, transform 0.7s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 900px) {
+    .hero .wrap { grid-template-columns: 1fr; text-align: center; }
+    .sub { margin-left: auto; margin-right: auto; }
+    .cta-row, .microcopy { justify-content: center; }
+    .eyebrow { margin-inline: auto; }
+    .phone { margin-top: 20px; }
+    .steps, .features { grid-template-columns: 1fr; }
+    .tiers { grid-template-columns: repeat(2, 1fr); }
+    .tier.pop { transform: none; }
+  }
+  @media (max-width: 560px) {
+    .tiers { grid-template-columns: 1fr; }
+    nav .btn { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    .reveal { opacity: 1; transform: none; }
+    .msg { opacity: 1; transform: none; }
+  }
+</style>
+
+<nav>
+  <div class="wrap">
+    <div class="logo">Vetted<span class="dot">.</span></div>
+    <a class="btn" href="#pricing">Check him now 💅</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-bg"></div>
+  <canvas id="hearts"></canvas>
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">💖 the girl's guide to who he really is</span>
+      <h1>Before you catch feelings, <span class="grad">get the tea.</span></h1>
+      <p class="sub">Send us his name, @, number, or a photo. In 15 seconds you'll know <em>who he really is</em> — no more guessing.</p>
+      <div class="cta-row">
+        <a class="btn" href="#pricing">Get your first check free 🎁</a>
+        <a class="btn ghost" href="#how">See how it works</a>
+      </div>
+      <div class="microcopy">🔒 100% legal &amp; private · public records only · he'll never know</div>
+    </div>
+
+    <div class="phone" aria-hidden="true">
+      <div class="screen">
+        <div class="msg me">Daniel M. 👀</div>
+        <div class="msg bot">💅 <b>The tea on Daniel</b><br />🟢 mostly good, bestie ✨</div>
+        <div class="msg bot">💖 <b>What you want to know</b><br />🎂 32 · 📍 Miami · 💘 no marriage record<br />💼 works @ the agency he said</div>
+        <div class="msg bot">🛡️ <b>Is he safe?</b><br />✅ no red flags in courts or news</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="how">
+    <div class="wrap">
+      <p class="kicker reveal">stupid simple</p>
+      <h2 class="reveal">Three taps to the truth</h2>
+      <p class="lead reveal">No apps to download, no forms. Just message the bot like you'd text a friend.</p>
+      <div class="steps">
+        <div class="step reveal"><div class="n">01</div><h3>Send what you've got</h3><p>His name, Instagram @, phone number, or even just a photo. Anything works.</p></div>
+        <div class="step reveal"><div class="n">02</div><h3>We do the digging</h3><p>24 sources — public records, socials, safety checks, breaches — cross-referenced in seconds.</p></div>
+        <div class="step reveal"><div class="n">03</div><h3>Get the full tea ☕</h3><p>One clean report: who he is, is he single, is he safe, and everything he didn't tell you.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="find" style="background:linear-gradient(180deg,transparent,rgba(255,233,201,0.35),transparent)">
+    <div class="wrap">
+      <p class="kicker reveal">the receipts</p>
+      <h2 class="reveal">Everything you'll find out</h2>
+      <p class="lead reveal">The stuff you'd never get from a first date — pulled from legal public records.</p>
+      <div class="features">
+        <div class="feat reveal"><span class="ico">💍</span><h3>Single or taken?</h3><p>Marriage &amp; divorce records — is he really as available as he says?</p></div>
+        <div class="feat reveal"><span class="ico">🎭</span><h3>Catfish check</h3><p>Reverse-search his photos to see if they're stolen or someone else's.</p></div>
+        <div class="feat reveal"><span class="ico">🛡️</span><h3>Is he safe?</h3><p>Criminal &amp; court records, sex-offender registry, arrests, restraining orders.</p></div>
+        <div class="feat reveal"><span class="ico">📱</span><h3>His real socials</h3><p>Every account he has — including the ones he never mentioned.</p></div>
+        <div class="feat reveal"><span class="ico">🔓</span><h3>Hidden accounts</h3><p>Data breaches reveal dating-app &amp; secret accounts tied to his email.</p></div>
+        <div class="feat reveal"><span class="ico">💼</span><h3>Does his story add up?</h3><p>Real job, employer, income clues, businesses — is he who he claims?</p></div>
+        <div class="feat reveal"><span class="ico">👨‍👩‍👧</span><h3>Family &amp; connections</h3><p>Relatives and the people in his circle — the full picture.</p></div>
+        <div class="feat reveal"><span class="ico">🕰️</span><h3>His past self</h3><p>Deleted &amp; old profiles from the internet archive — what he tried to erase.</p></div>
+        <div class="feat reveal"><span class="ico">🔔</span><h3>24/7 watch</h3><p>We keep an eye out and ping you the second anything about him changes.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="wrap">
+      <p class="kicker reveal">pick your plan</p>
+      <h2 class="reveal">Peace of mind, priced right 💕</h2>
+      <p class="lead reveal">Your first check is on us. Fall in love with knowing.</p>
+      <div class="tiers">
+        <div class="tier free reveal">
+          <h3>First Peek</h3>
+          <div class="price">Free</div>
+          <p class="desc">Your very first check, on the house.</p>
+          <ul><li>Is he real?</li><li>His public socials</li><li>Basic safety flags</li></ul>
+          <a class="btn" href="#" data-bot>Start free 🎁</a>
+        </div>
+        <div class="tier pop reveal">
+          <div class="tag">most popular</div>
+          <h3>The Full Tea</h3>
+          <div class="price">$19.99<span>/check</span></div>
+          <p class="desc">One complete deep dossier on him.</p>
+          <ul><li>Everything, unlocked</li><li>Marriage, family, records</li><li>Hidden &amp; dating accounts</li><li>Safety &amp; court check</li></ul>
+          <a class="btn" href="#" data-bot>Get the tea ☕</a>
+        </div>
+        <div class="tier reveal">
+          <h3>Bestie Bundle</h3>
+          <div class="price">$39.99<span>/3 checks</span></div>
+          <p class="desc">Three deep dossiers — save $20.</p>
+          <ul><li>3 full deep checks</li><li>Share with the girls</li><li>Never expires</li></ul>
+          <a class="btn ghost" href="#" data-bot>Grab the bundle 👯‍♀️</a>
+        </div>
+        <div class="tier reveal">
+          <h3>Always Watching</h3>
+          <div class="price">$49.99<span>/mo</span></div>
+          <p class="desc">Unlimited checks + 24/7 monitoring.</p>
+          <ul><li>Unlimited deep checks</li><li>Watch anyone, get alerts</li><li>Cancel anytime</li></ul>
+          <a class="btn ghost" href="#" data-bot>Go unlimited 👑</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="trust" style="padding-top:20px">
+    <div class="wrap">
+      <div class="trust">
+        <div class="chip reveal">🔒 100% legal</div>
+        <div class="chip reveal">🙈 he'll never know</div>
+        <div class="chip reveal">📑 public records only</div>
+        <div class="chip reveal">💾 no leaked data, ever</div>
+        <div class="chip reveal">💗 built for women</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <div class="final-card reveal">
+        <h2>Stop wondering. Start knowing. 💅</h2>
+        <p class="lead">Your first check is free. Take 15 seconds — future you will thank you.</p>
+        <a class="btn" href="#" data-bot>Check him now 💖</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="logo">Vetted<span class="dot" style="color:var(--rose)">.</span></div>
+  <div>Know who he really is — before you catch feelings.</div>
+  <p class="disclaimer">Vetted aggregates publicly available records and social information for personal safety and awareness. Not a consumer reporting agency; results may not be used for employment, housing, credit, or tenant screening. Use responsibly and legally.</p>
+</footer>
+
+<script>
+  // ---- floating hearts / sparkles on the hero (Canvas) ----
+  (function () {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var canvas = document.getElementById("hearts");
+    var hero = document.querySelector(".hero");
+    if (!canvas || !hero) return;
+    var ctx = canvas.getContext("2d");
+    var W, H, parts;
+    var glyphs = ["💖", "💕", "✨", "🩷", "💗", "💫"];
+
+    function size() {
+      W = canvas.width = hero.offsetWidth;
+      H = canvas.height = hero.offsetHeight;
+    }
+    function make() {
+      return {
+        x: Math.random() * W,
+        y: H + Math.random() * H,
+        s: 12 + Math.random() * 22,
+        sp: 0.3 + Math.random() * 0.9,
+        sway: Math.random() * 2 * Math.PI,
+        swaySp: 0.005 + Math.random() * 0.02,
+        a: 0.35 + Math.random() * 0.45,
+        g: glyphs[(Math.random() * glyphs.length) | 0],
+      };
+    }
+    function init() {
+      size();
+      parts = [];
+      var n = Math.min(26, Math.floor(W / 45));
+      for (var i = 0; i < n; i++) {
+        var p = make();
+        p.y = Math.random() * H;
+        parts.push(p);
+      }
+    }
+    function tick() {
+      ctx.clearRect(0, 0, W, H);
+      for (var i = 0; i < parts.length; i++) {
+        var p = parts[i];
+        p.y -= p.sp;
+        p.sway += p.swaySp;
+        var x = p.x + Math.sin(p.sway) * 22;
+        ctx.globalAlpha = p.a;
+        ctx.font = p.s + "px serif";
+        ctx.fillText(p.g, x, p.y);
+        if (p.y < -30) { parts[i] = make(); }
+      }
+      ctx.globalAlpha = 1;
+      requestAnimationFrame(tick);
+    }
+    window.addEventListener("resize", init);
+    init();
+    tick();
+  })();
+
+  // ---- scroll reveal ----
+  (function () {
+    var els = document.querySelectorAll(".reveal");
+    if (!("IntersectionObserver" in window)) { els.forEach(function (e) { e.classList.add("in"); }); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en, i) {
+        if (en.isIntersecting) {
+          setTimeout(function () { en.target.classList.add("in"); }, (i % 4) * 80);
+          io.unobserve(en.target);
+        }
+      });
+    }, { threshold: 0.14 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+
+  // ---- bot links (replace BoyfriendCheckerBot with your bot's @username) ----
+  (function () {
+    var BOT = "https://t.me/BoyfriendCheckerBot";
+    document.querySelectorAll("[data-bot]").forEach(function (a) { a.setAttribute("href", BOT); });
+  })();
+</script>
