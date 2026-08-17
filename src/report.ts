@@ -240,13 +240,18 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   // ── 4. Public records & web mentions (the meat of a name search) ─────────
   const recSeen = new Set<string>();
   const records = all.filter((f) => {
-    if (!['nppes', 'sec', 'courtlistener', 'search'].includes(f.source)) return false;
+    if (!['nppes', 'sec', 'courtlistener', 'search', 'fec', 'opencorporates'].includes(f.source)) return false;
     const key = f.url ?? f.title;
     if (recSeen.has(key)) return false;
     recSeen.add(key);
     return true;
   });
   if (records.length) {
+    // FEC (job/employer/money/politics) and businesses are high-signal — lead with them.
+    records.sort((a, b) => {
+      const rank = (s: string) => (s === 'fec' ? 0 : s === 'opencorporates' ? 1 : s === 'sec' || s === 'nppes' ? 2 : 3);
+      return rank(a.source) - rank(b.source);
+    });
     const rec = ['📄 <b>Public records &amp; mentions</b>', ''];
     for (const f of records.slice(0, 10)) {
       rec.push(f.url ? `• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>` : `• ${escapeHtml(f.title)}`);

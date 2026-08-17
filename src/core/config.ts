@@ -28,6 +28,11 @@ export const config = {
   // Enformion / EnformionGO (formerly Endato) people-data aggregator.
   enformionName: opt('ENFORMION_AP_NAME'),
   enformionPassword: opt('ENFORMION_AP_PASSWORD'),
+  // FEC (openFEC) political-donations API. DEMO_KEY works but is rate-limited;
+  // a free api.data.gov key lifts the limit.
+  fecKey: opt('FEC_API_KEY') ?? 'DEMO_KEY',
+  // OpenCorporates business-registry API token (free tier available).
+  openCorporatesToken: opt('OPENCORPORATES_TOKEN'),
   dataDir: process.env.DATA_DIR ?? './data',
   // How often the watch loop re-checks each watched person, in minutes.
   watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),

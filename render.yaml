@@ -46,5 +46,10 @@ services:
         sync: false
       - key: ENFORMION_AP_PASSWORD
         sync: false
+      # FEC works without a key; add one from api.data.gov to lift rate limits.
+      - key: FEC_API_KEY
+        sync: false
+      - key: OPENCORPORATES_TOKEN
+        sync: false
       - key: ALLOWED_USER_IDS
         sync: false

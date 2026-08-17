@@ -3,7 +3,9 @@ import { blueskySource } from './bluesky.js';
 import { courtListenerSource } from './courtlistener.js';
 import { crtshSource } from './crtsh.js';
 import { enformionSource } from './enformion.js';
+import { fecSource } from './fec.js';
 import { githubSource } from './github.js';
+import { openCorporatesSource } from './opencorporates.js';
 import { nppesSource } from './nppes.js';
 import { ofacSource } from './ofac.js';
 import { phoneSource } from './phone.js';
@@ -34,4 +36,6 @@ export const ALL_SOURCES: Source[] = [
   phoneSource,
   registrySource,
   enformionSource,
+  fecSource,
+  openCorporatesSource,
 ];
