@@ -22,6 +22,9 @@ const pendingPick = new Map<number, { candidates: Candidate[]; raw: string }>();
 /** Users who tapped a menu button: their next message is this exact kind. */
 const pendingInput = new Map<number, SubjectKind>();
 
+/** Users we asked "what city?" — their next message is the city for this name. */
+const pendingCity = new Map<number, string>();
+
 /** The tap-to-choose input menu — removes the guesswork of free-text parsing. */
 const mainMenu = new InlineKeyboard()
   .text('🧑 Name', 'ask:person')
@@ -301,6 +304,35 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
   }
 }
 
+/**
+ * Run a person search, disambiguating first when a no-city name matches several
+ * distinct people. Shared by the free-text, button, city-answer and skip paths.
+ */
+async function runPerson(ctx: Context, seed: Subject): Promise<void> {
+  const uid = ctx.from!.id;
+  if (!seed.hints) {
+    const candidates = await enformionCandidates(seed.value).catch(() => null);
+    if (candidates && candidates.length >= 2) {
+      const distinctPlaces = new Set(candidates.map((c) => `${c.city ?? ''}|${c.state ?? ''}`));
+      if (distinctPlaces.size >= 2) {
+        pendingPick.set(uid, { candidates, raw: seed.raw });
+        const lines = candidates.map(
+          (c, i) =>
+            `${i + 1}. <b>${escapeHtml(c.name)}</b>${c.age ? `, ${escapeHtml(c.age)}` : ''}${
+              c.city ? ` — ${escapeHtml(c.city)}${c.state ? `, ${escapeHtml(c.state)}` : ''}` : ''
+            }`,
+        );
+        await ctx.reply(
+          [`🔎 I found <b>${candidates.length} people</b> named ${escapeHtml(seed.raw)}. Which one? 👇`, '', ...lines, '', 'Reply with the <b>number</b>.'].join('\n'),
+          { parse_mode: 'HTML' },
+        );
+        return;
+      }
+    }
+  }
+  await runTrace(ctx, seed);
+}
+
 async function main(): Promise<void> {
   await loadConsent();
   // Preload sanctions data in the background so the first OFAC lookup is instant
@@ -317,6 +349,33 @@ async function main(): Promise<void> {
   );
   bot.command('help', (ctx) => ctx.reply(HELP, withMenu));
   bot.command('check', (ctx) => (guard(ctx) ? ctx.reply('Who are we checking? Pick one 👇', withMenu) : undefined));
+
+  const skipCityKb = new InlineKeyboard().text('⏭ Skip — no city', 'skipcity');
+
+  /** Person + no city → ask for a city first (this is what makes reports full). */
+  async function askCityOrRun(ctx: Context, seed: Subject): Promise<void> {
+    const uid = ctx.from!.id;
+    if (seed.kind === 'person' && !seed.hints) {
+      pendingCity.set(uid, seed.raw);
+      await ctx.reply(
+        `📍 <b>What city or state are they in?</b>\n<i>This makes the report WAY fuller — a name with no city usually comes back thin.</i>`,
+        { parse_mode: 'HTML', reply_markup: skipCityKb },
+      );
+      return;
+    }
+    if (seed.kind === 'person') return runPerson(ctx, seed);
+    return runTrace(ctx, seed);
+  }
+
+  // Skip the city prompt → run with just the name.
+  bot.callbackQuery('skipcity', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const name = pendingCity.get(ctx.from.id);
+    if (!name) return;
+    pendingCity.delete(ctx.from.id);
+    await runPerson(ctx, detectSubject(name));
+  });
 
   // Menu button tapped → prompt for that exact input type, no guessing.
   bot.callbackQuery(/^ask:(.+)$/, async (ctx) => {
@@ -574,12 +633,23 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Answering the "what city?" prompt → attach it to the pending name.
+    const awaitingCity = pendingCity.get(uid);
+    if (awaitingCity) {
+      pendingCity.delete(uid);
+      const seed = detectSubject(awaitingCity);
+      const city = text.trim();
+      if (city && !/^(skip|no|none|idk)$/i.test(city)) seed.hints = city;
+      await runPerson(ctx, seed);
+      return;
+    }
+
     // If they tapped a menu button, treat this message as that exact kind — no
     // guessing. This is what stops "phone 177… and 131…" being read as a name.
     const forced = pendingInput.get(uid);
     if (forced) {
       pendingInput.delete(uid);
-      await runTrace(ctx, seedForKind(forced, text));
+      await askCityOrRun(ctx, seedForKind(forced, text));
       return;
     }
 
@@ -589,36 +659,8 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Disambiguate a name with no city BEFORE spending a full deep-search credit.
-    // A cheap teaser lists the matches; she picks the right person.
-    if (seed.kind === 'person' && !seed.hints) {
-      const candidates = await enformionCandidates(seed.value).catch(() => null);
-      if (candidates && candidates.length >= 2) {
-        const distinctPlaces = new Set(candidates.map((c) => `${c.city ?? ''}|${c.state ?? ''}`));
-        if (distinctPlaces.size >= 2) {
-          pendingPick.set(uid, { candidates, raw: text });
-          const lines = candidates.map(
-            (c, i) =>
-              `${i + 1}. <b>${escapeHtml(c.name)}</b>${c.age ? `, ${escapeHtml(c.age)}` : ''}${
-                c.city ? ` — ${escapeHtml(c.city)}${c.state ? `, ${escapeHtml(c.state)}` : ''}` : ''
-              }`,
-          );
-          await ctx.reply(
-            [
-              `🔎 I found <b>${candidates.length} people</b> named ${escapeHtml(seed.raw)}. Which one? 👇`,
-              '',
-              ...lines,
-              '',
-              `Reply with the <b>number</b> — or send his name + city like <code>${escapeHtml(seed.raw)} | Miami</code> 💅`,
-            ].join('\n'),
-            { parse_mode: 'HTML' },
-          );
-          return;
-        }
-      }
-    }
-
-    await runTrace(ctx, seed);
+    // Person with no city → guide them to add one; everything else runs now.
+    await askCityOrRun(ctx, seed);
   });
 
   bot.catch((err) => {
