@@ -139,26 +139,8 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
       ? 'mostly good — just a couple things to double-check 💫'
       : 'nothing scary jumped out ✨';
 
-  const head = [`💅 <b>The tea on ${escapeHtml(seed.raw)}</b>`, '', `${light} <b>Quick take:</b> ${take}`];
-
+  // ── 1. Summary card — header + the at-a-glance answers, ONE opening bubble ─
   const flags = dossier.signals.filter((s) => s.level !== 'info');
-  const infos = dossier.signals.filter((s) => s.level === 'info');
-  if (flags.length) {
-    head.push('', '🚩 <b>Keep an eye on:</b>');
-    for (const s of [...flags].sort((a, b) => (a.level === 'red' ? -1 : 1))) {
-      head.push(`${SIGNAL_ICON[s.level]} ${escapeHtml(s.text)}`);
-    }
-  }
-  if (infos.length) {
-    head.push('', '💡 <b>Good to know:</b>');
-    for (const s of infos) head.push(`• ${escapeHtml(s.text)}`);
-  }
-  sections.push(head.join('\n'));
-
-  // ── 1.5 "What you really want to know" — the at-a-glance card ─────────────
-  // Translates the raw data into the exact questions she has: how old, where,
-  // single or taken, what he does, any red flags. Only shown when we actually
-  // have some of these answers (i.e. a name search with deep data).
   const idf = all.find((f) => f.source === 'enformion' && f.label === 'Identity');
   const relf = all.find((f) => f.source === 'enformion' && f.label === 'Relationship status');
   const fecf = all.find((f) => f.source === 'fec');
@@ -167,28 +149,34 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   const relStatus = relf?.extra?.status as string | undefined;
   const employer = fecf?.extra?.employer as string | undefined;
   const occupation = fecf?.extra?.occupation as string | undefined;
-  const redFlagCount = dossier.signals.filter((s) => s.level === 'red').length + all.filter((f) => f.source === 'adverse' && /🚨/.test(f.title)).length;
+  const redFlagCount =
+    dossier.signals.filter((s) => s.level === 'red').length + all.filter((f) => f.source === 'adverse' && /🚨/.test(f.title)).length;
 
-  const card: string[] = [];
-  if (age) card.push(`🎂 <b>Age:</b> ${escapeHtml(age)}`);
-  if (city) card.push(`📍 <b>Lives:</b> ${escapeHtml(city)}`);
+  const summary = [`💅 <b>The tea on ${escapeHtml(seed.raw)}</b>`, '', `${light} <b>Quick take:</b> ${take}`];
+  // The at-a-glance answers, folded right into the opener.
+  const facts: string[] = [];
+  if (age) facts.push(`🎂 <b>Age:</b> ${escapeHtml(age)}`);
+  if (city) facts.push(`📍 <b>Lives:</b> ${escapeHtml(city)}`);
   if (relStatus) {
     const rel = relStatus === 'married' ? '💍 Married — careful!' : relStatus === 'divorced' ? '💔 Divorced' : '💚 No marriage record (looks single)';
-    card.push(`💘 <b>Relationship:</b> ${rel}`);
+    facts.push(`💘 <b>Relationship:</b> ${rel}`);
   }
-  if (employer || occupation) card.push(`💼 <b>Works:</b> ${escapeHtml([occupation, employer].filter(Boolean).join(' @ '))}`);
-  if (age || city || relStatus) {
-    card.push(`🚩 <b>Red flags:</b> ${redFlagCount > 0 ? `⚠️ ${redFlagCount} — check below` : 'none so far ✨'}`);
-    sections.push(['💖 <b>What you really want to know</b>', '', ...card].join('\n'));
+  if (employer || occupation) facts.push(`💼 <b>Works:</b> ${escapeHtml([occupation, employer].filter(Boolean).join(' @ '))}`);
+  if (facts.length) summary.push('', ...facts);
+  if (flags.length) {
+    summary.push('', '🚩 <b>Keep an eye on:</b>');
+    for (const s of [...flags].sort((a, b) => (a.level === 'red' ? -1 : 1))) summary.push(`${SIGNAL_ICON[s.level]} ${escapeHtml(s.text)}`);
+  } else if (facts.length) {
+    summary.push('', '🚩 <b>Red flags:</b> none so far ✨');
   }
+  sections.push(summary.join('\n'));
 
-  // ── 2. Safety check — registry + sanctions, their OWN prominent section ──
-  // Kept separate from everything else because it is the highest-stakes result
-  // and must never be diluted or misread. The registry source already filters to
-  // real name matches, so anything here actually names him.
+  // ── 2. The AI read comes SECOND — the story before the evidence ──────────
+  if (dossier.narrative) sections.push(`💭 <b>My honest read</b>\n\n${escapeHtml(dossier.narrative)}`);
+
+  // ── 3. Is he safe? — highest-stakes, never diluted ───────────────────────
   const safety = all.filter((f) => ['registry', 'ofac', 'adverse', 'scam', 'unicourt'].includes(f.source));
   if (safety.length) {
-    // Worst news first: adverse-media hits and sanctions before all-clear lines.
     safety.sort((a, b) => b.confidence - a.confidence);
     const s = ['🛡️ <b>Is he safe?</b>', ''];
     for (const f of safety) {
@@ -199,9 +187,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     sections.push(s.join('\n'));
   }
 
-  // ── 2.5 Deep background (aggregator): relatives, marriage, records ───────
-  // Placed right after safety because it is the richest, most decision-relevant
-  // data — the "is he married / who's his family / any records" answers.
+  // ── 3.5 The real him — the richest personal data, kept high ──────────────
   const deep = all.filter((f) => f.source === 'enformion');
   if (deep.length) {
     const d = ['💜 <b>The real him</b>', ''];
@@ -214,7 +200,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     sections.push(d.join('\n'));
   }
 
-  // ── 3. Accounts, split into "very likely him" vs "same handle, verify" ───
+  // ── 4. Accounts, split into "very likely him" vs "same handle, verify" ───
   const acctText = (f: (typeof all)[number]): string =>
     f.source === 'usernames' ? f.label : `${f.label} ${f.title}`;
 
@@ -334,12 +320,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     sections.push(a.join('\n'));
   }
 
-  // ── 7. The plain-English AI read ─────────────────────────────────────────
-  if (dossier.narrative) {
-    sections.push(`💭 <b>My honest read</b>\n\n${escapeHtml(dossier.narrative)}`);
-  }
-
-  // ── 8. "Want deeper?" — nudge for the selectors we don't have yet ────────
+  // ── "Want deeper?" — nudge for the selectors we don't have yet ───────────
   const nudges: string[] = [];
   const haveEmail =
     seed.kind === 'email' ||
