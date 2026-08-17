@@ -1,5 +1,6 @@
 import { tryCharge } from '../core/budget.js';
 import { config } from '../core/config.js';
+import { firstNameMatches } from '../core/names.js';
 import type { Finding, Source, Subject } from '../core/types.js';
 
 /**
@@ -138,12 +139,8 @@ export const enformionSource: Source = {
     // name can be anglicised), but Ariel→Michael is a different human. If the
     // first name doesn't line up, refuse to present the record.
     const returnedFirst = (str(get(get(p, 'Name', 'name'), 'FirstName', 'firstName')) ?? displayName.split(/\s+/)[0] ?? '').toLowerCase();
-    const searchedFirst = np.first.toLowerCase();
-    const firstOk =
-      !returnedFirst ||
-      returnedFirst === searchedFirst ||
-      returnedFirst.startsWith(searchedFirst) ||
-      searchedFirst.startsWith(returnedFirst);
+    // Nickname-aware: "Mike" matches "Mikhail"/"Michael", "Dan" matches "Daniel".
+    const firstOk = !returnedFirst || firstNameMatches(np.first, returnedFirst);
     if (!firstOk) {
       return [
         {
