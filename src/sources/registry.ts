@@ -51,19 +51,37 @@ export const registrySource: Source = {
       },
     );
 
-    const hits = (res.web?.results ?? []).filter((r) => r.url);
+    const raw = (res.web?.results ?? []).filter((r) => r.url);
 
-    if (hits.length === 0) {
+    // Critical safety filter: a registry-site web result only counts if the
+    // person's LAST name (and, when present, first name) actually appears in the
+    // page's title or description. Without this, Brave returns generic registry
+    // landing pages and entries for *other* people who merely share a first name
+    // — which is exactly how you end up showing a stranger's offender record next
+    // to an innocent person. Names on this topic must be exact or not shown.
+    const parts = name.toLowerCase().split(/\s+/);
+    const first = parts[0]!;
+    const last = parts[parts.length - 1]!;
+    const isRealMatch = (r: { title?: string; description?: string }): boolean => {
+      const hay = `${r.title ?? ''} ${r.description ?? ''}`.toLowerCase();
+      return hay.includes(last) && hay.includes(first);
+    };
+
+    const matches = raw.filter(isRealMatch);
+
+    if (matches.length === 0) {
+      // No page actually names this person. Report the all-clear plainly — and
+      // never list the different-people pages that got filtered out.
       return [
         {
           source: 'registry',
           label: 'Registry',
-          title: '✅ No registry pages matched this name',
+          title: `✅ No sex-offender registry match for ${name}`,
           detail:
-            'Nothing surfaced on public sex-offender registry sites for this exact name. NOT a clearance — registries are best searched by location on the official site, and names are not unique. Confirm at nsopw.gov.',
+            'No registry page actually names this person. Not a formal clearance — the official registries have no open search, so for full peace of mind search his exact name + location yourself at nsopw.gov.',
           url: 'https://www.nsopw.gov',
           retrievedAt: ctx.now,
-          confidence: 0.5,
+          confidence: 0.55,
         },
       ];
     }
@@ -72,25 +90,24 @@ export const registrySource: Source = {
       {
         source: 'registry',
         label: 'Registry',
-        title: `🔴 ${hits.length} registry page(s) mention this name — VERIFY on the official site`,
+        title: `🔴 A registry page names "${name}" — VERIFY before believing it`,
         detail:
-          'This is an UNCONFIRMED pointer, not a match. Names are not unique and search engines are imprecise. Open the official record and confirm the photo, DOB and location before believing it. Never act on this alone.',
+          'A public registry page mentions this exact name. This is still NOT confirmation — names repeat. Open the official record and match the PHOTO, date of birth and location before you trust it. Never act on this alone.',
         url: 'https://www.nsopw.gov',
         retrievedAt: ctx.now,
-        // Deliberately capped low: a name-only web hit must never read as fact.
-        confidence: 0.4,
+        confidence: 0.5,
       },
     ];
 
-    for (const h of hits.slice(0, 5)) {
+    for (const h of matches.slice(0, 4)) {
       findings.push({
         source: 'registry',
         label: 'Registry page',
+        // Title only — the descriptions are just the site's legal boilerplate.
         title: (h.title ?? h.url ?? '').slice(0, 120),
-        detail: h.description?.replace(/\s+/g, ' ').slice(0, 200),
         url: h.url,
         retrievedAt: ctx.now,
-        confidence: 0.35,
+        confidence: 0.4,
       });
     }
 

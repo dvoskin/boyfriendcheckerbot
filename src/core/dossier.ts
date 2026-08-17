@@ -15,10 +15,17 @@ export interface Dossier {
   names: string[];
 }
 
-/** Pull "Name: X" style values out of finding details for cross-checking. */
+/**
+ * Pull "Name: X" style values out of finding details for cross-checking.
+ * Only reads CONFIDENT findings — fuzzy name-search matches (a climate scientist,
+ * a French YouTuber who happen to share a first name) are different people, and
+ * treating their names as the subject's aliases produces a bogus "multiple names"
+ * flag. Below the threshold, it is not his name.
+ */
 function extractNames(findings: Finding[]): string[] {
   const names = new Set<string>();
   for (const f of findings) {
+    if (f.confidence < 0.7) continue;
     for (const line of (f.detail ?? '').split('\n')) {
       const m = /^\s*Name:\s*(.+)$/i.exec(line);
       if (m?.[1]) names.add(m[1].trim());

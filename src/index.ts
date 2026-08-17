@@ -185,12 +185,13 @@ async function handleLookup(ctx: Context, subject: Subject): Promise<void> {
   });
 }
 
-/** Friendly, non-technical progress lines shown while a trace runs. */
+/** Girly, non-technical progress lines shown while a trace runs. */
 const TRACE_STEPS = [
-  '🔍 Digging through his footprint…',
-  '🕸️ Connecting the dots…',
-  '📚 Checking the archives…',
-  '⚖️ Running the safety checks…',
+  '🔍 Digging into his footprint, hold on…',
+  '🕸️ Connecting all the dots…',
+  '📚 Snooping through the archives…',
+  '🛡️ Running the safety checks…',
+  '💅 Almost done, putting it together…',
 ];
 
 /**
@@ -199,7 +200,7 @@ const TRACE_STEPS = [
  * never has to learn a command — sending "@johndoe" just works.
  */
 async function runTrace(ctx: Context, seed: Subject): Promise<void> {
-  const status = await ctx.reply('💅 On it — give me a sec…', { parse_mode: 'HTML' });
+  const status = await ctx.reply('💅 On it, bestie — give me a sec…', { parse_mode: 'HTML' });
   let step = 0;
   const tick = setInterval(() => {
     step = (step + 1) % TRACE_STEPS.length;
@@ -219,10 +220,10 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     if (findingTotal === 0) {
       await ctx.reply(
         [
-          '🤷‍♀️ I came up empty on that one.',
+          '🤷‍♀️ Hmm, came up empty on that one, babe.',
           '',
-          'That can mean he keeps a low profile, or I need a different angle. Try his:',
-          '📧 email · 📱 phone · 📸 photo (as a File) · or a different @username.',
+          'Could mean he keeps a low profile — or I just need a better angle. Try sending his:',
+          '📧 email · 📱 phone · 📸 photo (as a File) · or a different @username 💫',
         ].join('\n'),
         { parse_mode: 'HTML' },
       );
