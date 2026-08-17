@@ -1,5 +1,6 @@
 import { config } from '../core/config.js';
 import { httpJson } from '../core/http.js';
+import { decodeEntities } from '../core/text.js';
 import type { Finding, Source, Subject } from '../core/types.js';
 
 /**
@@ -109,8 +110,8 @@ export const searchSource: Source = {
         findings.push({
           source: 'search',
           label: isSocial ? 'Social profile' : isSiteScoped ? 'Platform profile' : 'Web',
-          title: hit.title.slice(0, 120),
-          detail: hit.snippet?.replace(/\s+/g, ' ').slice(0, 250),
+          title: decodeEntities(hit.title).slice(0, 120),
+          detail: hit.snippet ? decodeEntities(hit.snippet).replace(/\s+/g, ' ').slice(0, 250) : undefined,
           url: hit.url,
           retrievedAt: ctx.now,
           confidence: isSocial || isSiteScoped ? 0.65 : 0.4,

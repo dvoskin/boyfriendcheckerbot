@@ -162,6 +162,21 @@ const PUBLIC_SUFFIXES = new Set([
   'com.mx',
 ]);
 
+/**
+ * Real TLDs we accept as a domain's ending. Without this, a username with a dot
+ * ("puz.inski") looks domain-shaped and gets emitted as "his website". Covers the
+ * gTLDs and ccTLDs a personal site realistically uses; anything else is not a
+ * domain.
+ */
+const VALID_TLDS = new Set([
+  'com','net','org','io','co','app','dev','me','xyz','ai','us','info','biz','tv','gg','so','sh',
+  'to','ly','be','pro','online','site','store','blog','tech','design','studio','agency','life',
+  'world','live','news','media','group','club','fm','cc','wtf','lol','fyi','link','page','wiki',
+  'space','vip','fun','shop','art','email','photo','photography','me','cloud','digital','network',
+  'uk','ca','au','de','fr','es','it','nl','ru','jp','cn','in','br','mx','nz','ie','se','no','fi',
+  'dk','pl','pt','ch','at','cz','gr','il','za','kr','tr','ua','ro','hu','sg','hk',
+]);
+
 const EMAIL_RE = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/gi;
 const DOMAIN_RE = /\b((?:[a-z0-9-]+\.)+[a-z]{2,})\b/gi;
 const HANDLE_RE = /(?:^|[\s(])@([a-z0-9._-]{2,40})\b/gi;
@@ -224,6 +239,9 @@ function registrableHost(raw: string): string | null {
   if (EMAIL_PROVIDERS.has(base) || EMAIL_PROVIDERS.has(host)) return null;
   // Still a bare public suffix (only two labels, e.g. "co.uk") — no real name.
   if (PUBLIC_SUFFIXES.has(base)) return null;
+  // Reject anything whose ending isn't a real TLD (e.g. "puz.inski" is a handle).
+  const tld = base.split('.').pop()!;
+  if (!VALID_TLDS.has(tld)) return null;
   return base;
 }
 
