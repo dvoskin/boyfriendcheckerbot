@@ -279,7 +279,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   if (strong.length || weak.length) {
     const acct = ['📱 <b>Other accounts under this handle</b>'];
     if (strong.length) {
-      acct.push('', '✅ <b>Very likely him:</b>');
+      acct.push('', '✅ <b>Very likely them:</b>');
       for (const f of strong) acct.push(`• <a href="${escapeHtml(f.url!)}">${escapeHtml(acctText(f))}</a>`);
     }
     if (weak.length) {
@@ -323,7 +323,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
       b.push(`<b>${escapeHtml(f.title)}</b>`);
       if (f.detail) for (const line of f.detail.split('\n')) b.push(escapeHtml(line));
     }
-    b.push('', '<i>💡 A dating/adult site here means he had an account there. Leaks also reveal accounts he never mentioned.</i>');
+    b.push('', '<i>💡 A dating/adult site here means they had an account there. Leaks also reveal accounts they never mentioned.</i>');
     sections.push(b.join('\n'));
   }
 
@@ -334,11 +334,19 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     const first = f.detail?.split('\n')[0];
     if (first) contact.push(`  <i>${escapeHtml(first)}</i>`);
   }
+  // Don't repeat emails already listed in the Enformion "Their emails" block.
+  const enfEmails = new Set(
+    all
+      .filter((f) => f.source === 'enformion' && f.label === 'Emails')
+      .flatMap((f) => (f.detail ?? '').split('\n'))
+      .map((s) => s.trim().toLowerCase()),
+  );
   for (const e of graph.nodes.filter((n) => n.depth > 0 && n.kind === 'email')) {
-    contact.push(`• 📧 Email linked to him: ${escapeHtml(e.value)}`);
+    if (enfEmails.has(e.value.toLowerCase())) continue;
+    contact.push(`• 📧 Email linked to them: ${escapeHtml(e.value)}`);
   }
   for (const d of graph.nodes.filter((n) => n.depth > 0 && n.kind === 'domain')) {
-    contact.push(`• 🌐 Website linked to him: ${escapeHtml(d.value)}`);
+    contact.push(`• 🌐 Website linked to them: ${escapeHtml(d.value)}`);
   }
   if (contact.length) sections.push(['📇 <b>Contact traces</b>', '', ...contact].join('\n'));
 
