@@ -13,6 +13,7 @@ import { enformionSource } from './enformion.js';
 import { fecSource } from './fec.js';
 import { finraSource } from './finra.js';
 import { githubSource } from './github.js';
+import { gravatarSource } from './gravatar.js';
 import { openCorporatesSource } from './opencorporates.js';
 import { nppesSource } from './nppes.js';
 import { ofacSource } from './ofac.js';
@@ -54,4 +55,5 @@ export const ALL_SOURCES: Source[] = [
   scamSource,
   brightDataSource,
   uniCourtSource,
+  gravatarSource,
 ];

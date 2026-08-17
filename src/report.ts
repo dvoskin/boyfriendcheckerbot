@@ -152,7 +152,35 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   const redFlagCount =
     dossier.signals.filter((s) => s.level === 'red').length + all.filter((f) => f.source === 'adverse' && /🚨/.test(f.title)).length;
 
-  const summary = [`💅 <b>The tea on ${escapeHtml(seed.raw)}</b>`, '', `${light} <b>Quick take:</b> ${take}`];
+  // ── Vibe check: a single 0–100 score, computed deterministically ─────────
+  // A shareable "how much should I worry" number. Starts at 100 and drops for
+  // real safety signals — never for neutral facts.
+  let score = 100;
+  const anyF = (pred: (f: (typeof all)[number]) => boolean) => all.some(pred);
+  if (anyF((f) => f.source === 'ofac')) score -= 45;
+  if (anyF((f) => f.source === 'registry' && /🔴/.test(f.title))) score -= 45;
+  if (anyF((f) => f.source === 'adverse' && /🚨/.test(f.title))) score -= 30;
+  if (anyF((f) => f.source === 'scam' && /🚨/.test(f.title))) score -= 30;
+  if (anyF((f) => f.source === 'unicourt' && /🔴/.test(f.title))) score -= 25;
+  if (anyF((f) => f.source === 'enformion' && /Criminal record/i.test(f.detail ?? ''))) score -= 25;
+  if (anyF((f) => f.label === 'Synthetic media')) score -= 20;
+  if (anyF((f) => f.source === 'hibp' && /DATING|ADULT/i.test(f.title))) score -= 15;
+  if (anyF((f) => f.source === 'finra' && /🔴/.test(f.title))) score -= 10;
+  const relForScore = all.find((f) => f.source === 'enformion' && f.label === 'Relationship status')?.extra?.status;
+  if (relForScore === 'married') score -= 30;
+  else if (relForScore === 'divorced') score -= 5;
+  score -= dossier.signals.filter((s) => s.level === 'amber').length * 4;
+  if (dossier.signals.some((s) => /thin or freshly/i.test(s.text))) score -= 8;
+  score = Math.max(3, Math.min(100, score));
+  const vibe =
+    score >= 75 ? '🟢 looking good' : score >= 45 ? '🟡 a few yellow flags' : '🔴 serious red flags';
+
+  const summary = [
+    `💅 <b>The tea on ${escapeHtml(seed.raw)}</b>`,
+    '',
+    `💯 <b>Vibe check:</b> ${score}/100 — ${vibe}`,
+    `${light} <b>Quick take:</b> ${take}`,
+  ];
   // The at-a-glance answers, folded right into the opener.
   const facts: string[] = [];
   if (age) facts.push(`🎂 <b>Age:</b> ${escapeHtml(age)}`);
@@ -263,7 +291,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   // ── 4. Public records & web mentions (the meat of a name search) ─────────
   const recSeen = new Set<string>();
   const records = all.filter((f) => {
-    if (!['nppes', 'sec', 'courtlistener', 'search', 'fec', 'opencorporates', 'finra', 'wikipedia', 'academic'].includes(f.source))
+    if (!['nppes', 'sec', 'courtlistener', 'search', 'fec', 'opencorporates', 'finra', 'wikipedia', 'academic', 'gravatar'].includes(f.source))
       return false;
     const key = f.url ?? f.title;
     if (recSeen.has(key)) return false;
