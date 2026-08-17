@@ -21,12 +21,25 @@ services:
         value: /data
       - key: CONTACT_EMAIL
         value: danny@goalsplasticsurgery.com
-      # Secrets are set in the Render dashboard, not committed here.
+      # How often the watch loop re-checks (minutes). Lower it while testing.
+      - key: WATCH_INTERVAL_MIN
+        value: "360"
+      # Secrets: declared here so the blueprint knows them, but their VALUES are
+      # entered in the Render dashboard (Environment tab), never committed.
       - key: BOT_TOKEN
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Brave: powers name search + the sex-offender registry check.
       - key: BRAVE_API_KEY
+        sync: false
+      # SerpAPI: powers reverse image / catfish detection.
+      - key: SERPAPI_KEY
+        sync: false
+      # Twilio: phone number -> registered name.
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
         sync: false
       - key: ALLOWED_USER_IDS
         sync: false
