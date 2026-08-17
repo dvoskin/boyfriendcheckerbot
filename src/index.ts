@@ -9,6 +9,7 @@ import { analyzeImage } from './media/provenance.js';
 import { reverseImageSearch } from './media/reverse.js';
 import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
+import { addFlag, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, renderFindings, renderGraph, renderImageReport, renderProgress, renderReport, synthesize } from './report.js';
@@ -24,6 +25,9 @@ const pendingInput = new Map<number, SubjectKind>();
 
 /** Users we asked "what city?" — their next message is the city for this name. */
 const pendingCity = new Map<number, string>();
+
+/** The last person each user searched — so a "🚩 Flag" tap knows who to flag. */
+const lastSearched = new Map<number, { seed: Subject; keys: string[] }>();
 
 /** The tap-to-choose input menu — removes the guesswork of free-text parsing. */
 const mainMenu = new InlineKeyboard()
@@ -269,13 +273,36 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     clearInterval(tick);
     await ctx.api.deleteMessage(status.chat.id, status.message_id).catch(() => {});
 
+    // Community flags — check the network for warnings about this person, keyed to
+    // every identifier we know about them (seed + discovered phones/emails/handles).
+    const allF = graph.nodes.flatMap((n) => n.findings);
+    const keys = subjectKeys(seed, {
+      emails: graph.nodes.filter((n) => n.kind === 'email').map((n) => n.value),
+      usernames: graph.nodes.filter((n) => n.kind === 'username').map((n) => n.value),
+      phones: allF
+        .filter((f) => f.source === 'enformion' && f.label === 'Phones')
+        .flatMap((f) => (f.detail ?? '').match(/\d[\d\-() ]{8,}\d/g) ?? []),
+    });
+    const flagSummary = await lookupFlags(keys).catch(() => ({ total: 0, byCategory: [] }));
+    if (flagSummary.total > 0) {
+      const lines = [
+        '🚨 <b>COMMUNITY ALERT</b>',
+        `${flagSummary.total} ${flagSummary.total === 1 ? 'person has' : 'people have'} flagged <b>${escapeHtml(seed.raw)}</b>:`,
+        '',
+        ...flagSummary.byCategory.map((c) => `${FLAG_LABELS[c.category]} — ${c.count}`),
+        '',
+        '<i>Shared by other users, unverified — take it seriously but confirm for yourself.</i>',
+      ];
+      await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+    }
+
     const findingTotal = graph.nodes.reduce((n, node) => n + node.findings.length, 0);
     if (findingTotal === 0) {
       await ctx.reply(
         [
           '🤷‍♀️ Hmm, came up empty on that one.',
           '',
-          'Could mean they keep a low profile — or I just need a better angle. Try sending his:',
+          'Could mean they keep a low profile — or I just need a better angle. Try sending their:',
           '📧 email · 📱 phone · 📸 photo (as a File) · or a different @username 💫',
         ].join('\n'),
         { parse_mode: 'HTML' },
@@ -285,6 +312,12 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
         await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
       }
     }
+
+    // Offer to add their own experience to the network — the viral loop.
+    lastSearched.set(ctx.from!.id, { seed, keys });
+    await ctx.reply('💬 Dated them or know something? Help the next girl 👇', {
+      reply_markup: new InlineKeyboard().text('🚩 Flag this person', 'flag'),
+    });
 
     await audit({
       at: new Date().toISOString(),
@@ -375,6 +408,42 @@ async function main(): Promise<void> {
     if (!name) return;
     pendingCity.delete(ctx.from.id);
     await runPerson(ctx, detectSubject(name));
+  });
+
+  // "🚩 Flag" tapped → show the category picker for the last-searched person.
+  bot.callbackQuery('flag', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const last = lastSearched.get(ctx.from.id);
+    if (!last) {
+      await ctx.reply('Search someone first, then tap 🚩 Flag on their report.');
+      return;
+    }
+    const kb = new InlineKeyboard();
+    const cats = Object.keys(FLAG_LABELS) as FlagCategory[];
+    cats.forEach((c, i) => {
+      kb.text(FLAG_LABELS[c], `flagcat:${c}`);
+      if (i % 2 === 1) kb.row();
+    });
+    await ctx.reply(`What happened with <b>${escapeHtml(last.seed.raw)}</b>? Pick what fits 👇`, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  });
+
+  // A category picked → record the flag against the last-searched person.
+  bot.callbackQuery(/^flagcat:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery('Thanks — flag added 💛').catch(() => {});
+    if (!guard(ctx)) return;
+    const last = lastSearched.get(ctx.from.id);
+    if (!last) return;
+    const category = ctx.match![1] as FlagCategory;
+    if (!(category in FLAG_LABELS)) return;
+    await addFlag(ctx.from.id, last.keys, category);
+    await ctx.reply(
+      `✅ Flagged <b>${escapeHtml(last.seed.raw)}</b> as “${escapeHtml(FLAG_LABELS[category])}”. The next person who checks them will see it. You just helped someone 💛`,
+      { parse_mode: 'HTML' },
+    );
   });
 
   // Menu button tapped → prompt for that exact input type, no guessing.
