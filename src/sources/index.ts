@@ -5,7 +5,9 @@ import { crtshSource } from './crtsh.js';
 import { githubSource } from './github.js';
 import { nppesSource } from './nppes.js';
 import { ofacSource } from './ofac.js';
+import { phoneSource } from './phone.js';
 import { rdapSource } from './rdap.js';
+import { registrySource } from './registry.js';
 import { searchSource } from './search.js';
 import { secSource } from './sec.js';
 import { usernameSource } from './usernames.js';
@@ -28,4 +30,6 @@ export const ALL_SOURCES: Source[] = [
   ofacSource,
   secSource,
   courtListenerSource,
+  phoneSource,
+  registrySource,
 ];

@@ -1,0 +1,22 @@
+# Fly.io config for the Telegram worker. No [http_service] block — this is a
+# background worker with no inbound traffic. Secrets (BOT_TOKEN, ANTHROPIC_API_KEY)
+# are set with `fly secrets set`, never committed here.
+app = "boyfriendchecker"
+primary_region = "sea"
+
+[build]
+
+[env]
+  DATA_DIR = "/data"
+  CONTACT_EMAIL = "danny@goalsplasticsurgery.com"
+
+# Persist the audit log and consent list. Requires a volume named recon_data
+# (create it once with the command in DEPLOY notes).
+[mounts]
+  source = "recon_data"
+  destination = "/data"
+
+# One machine only — two pollers on the same bot token conflict.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

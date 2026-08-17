@@ -6,8 +6,10 @@ import { config, requireBotToken } from './core/config.js';
 import { runSources } from './core/runner.js';
 import type { SourceResult, Subject, SubjectKind } from './core/types.js';
 import { analyzeImage } from './media/provenance.js';
+import { reverseImageSearch } from './media/reverse.js';
 import { writeDossier } from './core/dossier.js';
 import { buildGraph } from './core/graph.js';
+import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, renderDossier, renderFindings, renderGraph, renderProgress, synthesize } from './report.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
@@ -30,39 +32,49 @@ async function saveConsent(): Promise<void> {
 }
 
 const TERMS = [
-  '<b>Before you search — permitted use</b>',
+  '👋 <b>Hey! Quick ground rules first — 10 seconds, promise.</b>',
   '',
-  'This tool queries <b>public and official sources only</b>: Internet Archive, ',
-  'Certificate Transparency, ICANN RDAP, SEC EDGAR, NPPES, OFAC, court records and ',
-  'public web/social pages. It uses no breached or leaked data.',
+  'I only dig through <b>public stuff</b> 🌐 — social profiles, public records, court &amp; ',
+  'sanctions lists, the internet archive. No hacking, no leaks, no private DMs. If it’s ',
+  'behind a login, I can’t (and won’t) touch it. 🙅‍♀️',
   '',
-  'By continuing you confirm that you will <b>not</b> use results:',
-  '• to make decisions about employment, housing, credit, insurance or tenancy ',
-  '(that makes this a consumer report under the FCRA and it is not one);',
-  '• to harass, stalk, threaten or intimidate anyone;',
-  '• in violation of any applicable law.',
+  'By tapping <b>/agree</b> you promise to use me for <b>your own safety &amp; peace of mind</b> — ',
+  'NOT to:',
+  '🚫 decide who to hire, rent to, or lend money to (that’s a different kind of report, and illegal here)',
+  '🚫 stalk, harass, or scare anyone',
   '',
-  'Every search is logged with your Telegram ID.',
+  '📝 Heads up: every search is logged. Be cool. 💅',
   '',
-  'Send <code>/agree</code> to continue.',
+  '<b>Ready? Tap 👉 /agree</b>',
 ].join('\n');
 
 const HELP = [
-  '<b>Commands</b>',
+  '<b>You’re in! 🎉 Let’s see who he really is 👀</b>',
   '',
-  '⭐ <code>/trace handle</code> — full dossier: identity graph + red flags + AI assessment',
-  '<code>/g handle</code> — identity graph only (linked accounts/emails/domains)',
+  'Just send me <b>anything you’ve got</b> — no commands, no fuss. I’ll figure it out:',
   '',
-  '<code>/u handle</code> — username across social surfaces, Bluesky, GitHub, archive',
-  '<code>/d example.com</code> — RDAP, Certificate Transparency, archived history',
-  '<code>/p John Smith | FL</code> — person: NPPES, SEC, OFAC, courts, web',
-  '<code>/c Acme LLC</code> — company: SEC, NPPES, OFAC, web',
-  '<code>/e a@b.com</code> — email: GitHub, web',
+  '💬 his <b>@username</b>   →  like  <code>@johndoe</code>',
+  '🧑 his <b>name</b>   →  like  <code>John Smith</code>',
+  '📧 his <b>email</b>   →  like  <code>john@gmail.com</code>',
+  '📱 his <b>phone</b>   →  like  <code>+1 305 555 0199</code>',
+  '📸 his <b>photo</b>   →  send it as a <b>File 📎</b> (not compressed!) so the hidden data survives',
   '',
-  'Or just send a handle, domain, email or name and it will pick the type.',
-  'Send a <b>photo as a file</b> (not compressed) for EXIF, GPS, C2PA and AI-generation checks.',
+  'Then just wait ~15 sec while I dig. 🔍✨',
   '',
-  '<i>Compressed photos have their metadata stripped by Telegram — always attach as a document.</i>',
+  '🔔 Want me to <b>keep watching</b> someone? Send <code>/watch @handle</code> and I’ll ping you when anything changes.',
+  '   (see them with <code>/watchlist</code>, stop with <code>/unwatch</code>)',
+  '',
+  '<i>Not sure? Just send his @ or his name and see. Try  torvalds  to test me. 😉</i>',
+].join('\n');
+
+/** Values that mean the user typed the placeholder instead of a real target. */
+const PLACEHOLDER_VALUES = new Set(['handle', 'value', 'username', 'name', 'him', 'his', 'test']);
+
+const NUDGE = [
+  '🤔 Hmm, I need something to go on!',
+  '',
+  'Just send me his <b>@username</b>, <b>name</b>, <b>email</b>, <b>phone</b>, or a <b>photo</b> 📸 — ',
+  'no slash needed. For example:  <code>@johndoe</code>  or  <code>John Smith</code>',
 ].join('\n');
 
 /** Best-effort type detection so plain messages work without a command. */
@@ -173,6 +185,77 @@ async function handleLookup(ctx: Context, subject: Subject): Promise<void> {
   });
 }
 
+/** Friendly, non-technical progress lines shown while a trace runs. */
+const TRACE_STEPS = [
+  '🔍 Digging through his footprint…',
+  '🕸️ Connecting the dots…',
+  '📚 Checking the archives…',
+  '⚖️ Running the safety checks…',
+];
+
+/**
+ * The whole show: build the identity graph, compute red flags, write the AI
+ * dossier, and reply. This is what plain messages AND /trace both run, so a user
+ * never has to learn a command — sending "@johndoe" just works.
+ */
+async function runTrace(ctx: Context, seed: Subject): Promise<void> {
+  const status = await ctx.reply('💅 On it — give me a sec…', { parse_mode: 'HTML' });
+  let step = 0;
+  const tick = setInterval(() => {
+    step = (step + 1) % TRACE_STEPS.length;
+    void ctx.api
+      .editMessageText(status.chat.id, status.message_id, TRACE_STEPS[step]!, { parse_mode: 'HTML' })
+      .catch(() => {});
+  }, 2500);
+
+  try {
+    const graph = await buildGraph(ALL_SOURCES, seed, { maxDepth: 2, maxNodes: 18 });
+    const dossier = await writeDossier(graph).catch(() => ({ signals: [], narrative: null, identityCount: 0, names: [] }));
+
+    clearInterval(tick);
+    await ctx.api.deleteMessage(status.chat.id, status.message_id).catch(() => {});
+
+    const findingTotal = graph.nodes.reduce((n, node) => n + node.findings.length, 0);
+    if (findingTotal === 0) {
+      await ctx.reply(
+        [
+          '🤷‍♀️ I came up empty on that one.',
+          '',
+          'That can mean he keeps a low profile, or I need a different angle. Try his:',
+          '📧 email · 📱 phone · 📸 photo (as a File) · or a different @username.',
+        ].join('\n'),
+        { parse_mode: 'HTML' },
+      );
+    } else {
+      for (const chunk of renderDossier(seed, dossier)) {
+        await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+      }
+      for (const chunk of renderGraph(graph)) {
+        await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+      }
+      await ctx.reply('🔔 Want me to keep an eye on him? Send  <code>/watch ' + escapeHtml(seed.raw) + '</code>', {
+        parse_mode: 'HTML',
+      });
+    }
+
+    await audit({
+      at: new Date().toISOString(),
+      telegramUserId: ctx.from!.id,
+      username: ctx.from?.username,
+      subjectKind: `trace:${seed.kind}`,
+      subjectValue: seed.value,
+      hints: seed.hints,
+      sourcesRun: ['trace'],
+      findingCount: findingTotal,
+    });
+  } catch (err) {
+    clearInterval(tick);
+    await ctx.api.deleteMessage(status.chat.id, status.message_id).catch(() => {});
+    await ctx.reply('😬 Something glitched on my end — try again in a moment.');
+    console.error('trace error:', err);
+  }
+}
+
 async function main(): Promise<void> {
   await loadConsent();
   // Preload sanctions data in the background so the first OFAC lookup is instant
@@ -190,7 +273,7 @@ async function main(): Promise<void> {
     if (!id) return;
     consented.add(id);
     await saveConsent();
-    await ctx.reply(`Recorded. ${'\n\n'}${HELP}`, { parse_mode: 'HTML' });
+    await ctx.reply(HELP, { parse_mode: 'HTML' });
   });
 
   const explicit: Record<string, SubjectKind> = {
@@ -201,57 +284,15 @@ async function main(): Promise<void> {
     e: 'email',
   };
 
-  // Flagship: full trace — identity graph + deterministic red flags + AI dossier.
+  // Flagship: full trace. Also runs automatically on any plain message.
   bot.command('trace', async (ctx) => {
     if (!guard(ctx)) return;
     const arg = ctx.match?.toString().trim();
-    if (!arg) {
-      await ctx.reply('Usage: <code>/trace &lt;username|email|domain|person&gt; value</code>', { parse_mode: 'HTML' });
+    if (!arg || PLACEHOLDER_VALUES.has(arg.toLowerCase().replace(/^@/, ''))) {
+      await ctx.reply(NUDGE, { parse_mode: 'HTML' });
       return;
     }
-    const [kindRaw, ...rest] = arg.split(/\s+/);
-    const validKinds: SubjectKind[] = ['username', 'email', 'domain', 'person', 'company'];
-    const hasKind = (validKinds as string[]).includes(kindRaw ?? '');
-    const kind = hasKind ? (kindRaw as SubjectKind) : detectSubject(arg).kind;
-    const value = (hasKind ? rest.join(' ') : arg).trim();
-    if (!value) {
-      await ctx.reply('Give a value to trace.');
-      return;
-    }
-
-    const status = await ctx.reply('<b>Tracing…</b> building identity graph', { parse_mode: 'HTML' });
-    const seed: Subject = { raw: value, kind, value: value.replace(/^@/, ''), hints: undefined };
-
-    const graph = await buildGraph(ALL_SOURCES, seed, {
-      maxDepth: 2,
-      maxNodes: 18,
-      onProgress: async (m) => {
-        await ctx.api
-          .editMessageText(status.chat.id, status.message_id, `<b>Tracing…</b>\n${escapeHtml(m)}`, { parse_mode: 'HTML' })
-          .catch(() => {});
-      },
-    });
-
-    await ctx.api.editMessageText(status.chat.id, status.message_id, '<b>Tracing…</b> writing dossier', { parse_mode: 'HTML' }).catch(() => {});
-    const dossier = await writeDossier(graph).catch(() => ({ signals: [], narrative: null, identityCount: 0, names: [] }));
-
-    await ctx.api.deleteMessage(status.chat.id, status.message_id).catch(() => {});
-    for (const chunk of renderDossier(seed, dossier)) {
-      await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
-    }
-    for (const chunk of renderGraph(graph)) {
-      await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
-    }
-
-    await audit({
-      at: new Date().toISOString(),
-      telegramUserId: ctx.from!.id,
-      username: ctx.from?.username,
-      subjectKind: `trace:${kind}`,
-      subjectValue: value,
-      sourcesRun: ['trace'],
-      findingCount: graph.nodes.reduce((n, node) => n + node.findings.length, 0),
-    });
+    await runTrace(ctx, detectSubject(arg));
   });
 
   // Auto-pivot identity graph: seed one selector, recursively expand linked ones.
@@ -310,6 +351,57 @@ async function main(): Promise<void> {
     });
   });
 
+  // Start watching a person: run one trace now to set the baseline, then the
+  // scheduler diffs future runs against it and pings on changes.
+  bot.command('watch', async (ctx) => {
+    if (!guard(ctx)) return;
+    const arg = ctx.match?.toString().trim();
+    if (!arg || PLACEHOLDER_VALUES.has(arg.toLowerCase().replace(/^@/, ''))) {
+      await ctx.reply('🔔 Who should I watch? Send  <code>/watch @handle</code>  or  <code>/watch John Smith</code>', {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+    const seed = detectSubject(arg);
+    const note = await ctx.reply('🔔 Setting up the watch — one baseline scan…');
+    try {
+      const graph = await buildGraph(ALL_SOURCES, seed, { maxDepth: 2, maxNodes: 18 });
+      await addWatch(ctx.from!.id, seed.kind, seed.value, seed.raw, graph.nodes.map((n) => n.id));
+      await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+      await ctx.reply(
+        `✅ Watching <b>${escapeHtml(seed.raw)}</b>. I’ll ping you if new accounts, domains, or changes show up. Every ~${Math.round(config.watchIntervalMin / 60) || 1}h.\n\nStop anytime with  <code>/unwatch ${escapeHtml(seed.raw)}</code>`,
+        { parse_mode: 'HTML' },
+      );
+    } catch {
+      await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+      await ctx.reply('😬 Couldn’t set up the watch — try again in a moment.');
+    }
+  });
+
+  bot.command('unwatch', async (ctx) => {
+    if (!guard(ctx)) return;
+    const arg = ctx.match?.toString().trim();
+    if (!arg) {
+      await ctx.reply('Send  <code>/unwatch @handle</code>  (see your list with /watchlist)', { parse_mode: 'HTML' });
+      return;
+    }
+    const removed = await removeWatch(ctx.from!.id, arg);
+    await ctx.reply(removed ? `🔕 Stopped watching <b>${escapeHtml(arg)}</b>.` : '🤷‍♀️ You weren’t watching that one.', {
+      parse_mode: 'HTML',
+    });
+  });
+
+  bot.command('watchlist', async (ctx) => {
+    if (!guard(ctx)) return;
+    const mine = await listWatches(ctx.from!.id);
+    if (mine.length === 0) {
+      await ctx.reply('👀 You’re not watching anyone yet. Add one with  <code>/watch @handle</code>', { parse_mode: 'HTML' });
+      return;
+    }
+    const lines = mine.map((w) => `• <b>${escapeHtml(w.raw)}</b> — since ${w.addedAt.slice(0, 10)}`);
+    await ctx.reply(`👀 <b>You’re watching:</b>\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+  });
+
   for (const [cmd, kind] of Object.entries(explicit)) {
     bot.command(cmd, async (ctx) => {
       if (!guard(ctx)) return;
@@ -335,8 +427,9 @@ async function main(): Promise<void> {
     const isPhoto = Boolean(ctx.message?.photo);
     const note = await ctx.reply(
       isPhoto
-        ? 'Analysing — note that Telegram strips EXIF from compressed photos. Re-send as a file for full metadata.'
-        : 'Analysing image…',
+        ? '📸 Looking at his photo… psst — next time send it as a <b>File 📎</b> so I can read the hidden data (camera, location, AI-fakery). Compressed photos lose all that.'
+        : '📸 Reading the photo — camera, location, AI-fakery check…',
+      { parse_mode: 'HTML' },
     );
 
     try {
@@ -345,11 +438,18 @@ async function main(): Promise<void> {
       const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
       const buf = Buffer.from(await res.arrayBuffer());
 
-      const findings = await analyzeImage(buf, new Date().toISOString());
+      const now = new Date().toISOString();
+      // Provenance (EXIF/GPS/AI) and reverse search run together — the first is
+      // instant and local, the second is the catfish check (only if a key is set).
+      const [provenance, reverse] = await Promise.all([
+        analyzeImage(buf, now),
+        reverseImageSearch(buf, now).catch(() => null),
+      ]);
+      const findings = [...(reverse ?? []), ...provenance];
       const subject: Subject = { raw: file.file_unique_id, kind: 'image', value: file.file_unique_id };
       const result: SourceResult = {
         source: 'image',
-        label: 'Image provenance',
+        label: 'Photo check',
         ok: true,
         findings,
         ms: 0,
@@ -375,16 +475,71 @@ async function main(): Promise<void> {
   });
 
   bot.on('message:text', async (ctx) => {
-    if (ctx.message.text.startsWith('/')) return;
     if (!guard(ctx)) return;
-    await handleLookup(ctx, detectSubject(ctx.message.text));
+    const text = ctx.message.text.trim();
+
+    // An unregistered slash command (e.g. "/tracehandle") lands here. Rather than
+    // stay silent — which is what confused early testers — nudge with examples.
+    if (text.startsWith('/')) {
+      await ctx.reply(
+        `🤔 I don’t know that command. Skip the slash — just send his <b>@username</b>, <b>name</b>, <b>email</b>, <b>phone</b>, or a <b>photo</b> 📸`,
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    const seed = detectSubject(text);
+    if (PLACEHOLDER_VALUES.has(seed.value.toLowerCase())) {
+      await ctx.reply(NUDGE, { parse_mode: 'HTML' });
+      return;
+    }
+    // Plain text runs the FULL trace — the target audience should never need /trace.
+    await runTrace(ctx, seed);
   });
 
   bot.catch((err) => {
     console.error('bot error:', err.error);
   });
 
-  console.log(`recon-bot up — ${ALL_SOURCES.length} sources registered`);
+  // Watch loop: periodically re-trace every watched person and DM the owner any
+  // change in their linked footprint. Kept sequential and gentle — this is a
+  // background job, not a race.
+  const runWatchSweep = async (): Promise<void> => {
+    const items = await allWatches();
+    for (const w of items) {
+      try {
+        const graph = await buildGraph(ALL_SOURCES, { raw: w.raw, kind: w.kind, value: w.value }, { maxDepth: 2, maxNodes: 18 });
+        const currentIds = new Set(graph.nodes.map((n) => n.id));
+        const baseline = new Set(w.baselineNodeIds);
+        const added = [...currentIds].filter((id) => !baseline.has(id));
+        const removed = [...baseline].filter((id) => !currentIds.has(id));
+
+        if (added.length || removed.length) {
+          const fmt = (id: string) => {
+            const [kind, ...rest] = id.split(':');
+            return `${escapeHtml(rest.join(':'))} <i>(${escapeHtml(kind ?? '')})</i>`;
+          };
+          const lines = [
+            `🔔 <b>Update on ${escapeHtml(w.raw)}</b>`,
+            '',
+            ...(added.length ? ['🆕 <b>New:</b>', ...added.slice(0, 10).map((id) => `• ${fmt(id)}`)] : []),
+            ...(removed.length ? ['❌ <b>Gone:</b>', ...removed.slice(0, 10).map((id) => `• ${fmt(id)}`)] : []),
+            '',
+            `Re-check with  <code>/trace ${escapeHtml(w.raw)}</code>`,
+          ];
+          await bot.api.sendMessage(w.userId, lines.join('\n'), { parse_mode: 'HTML' }).catch(() => {});
+        }
+        await updateBaseline(w.id, [...currentIds]);
+      } catch (err) {
+        console.error(`watch sweep failed for ${w.id}:`, err);
+      }
+    }
+  };
+
+  const intervalMs = Math.max(5, config.watchIntervalMin) * 60_000;
+  setInterval(() => void runWatchSweep(), intervalMs);
+
+  console.log(`recon-bot up — ${ALL_SOURCES.length} sources registered, watch sweep every ${config.watchIntervalMin}min`);
   await bot.start();
 }
 

@@ -23,7 +23,11 @@ export const config = {
   serpapiKey: opt('SERPAPI_KEY'),
   githubToken: opt('GITHUB_TOKEN'),
   courtListenerToken: opt('COURTLISTENER_TOKEN'),
+  twilioSid: opt('TWILIO_ACCOUNT_SID'),
+  twilioToken: opt('TWILIO_AUTH_TOKEN'),
   dataDir: process.env.DATA_DIR ?? './data',
+  // How often the watch loop re-checks each watched person, in minutes.
+  watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),
   allowedUserIds: (process.env.ALLOWED_USER_IDS ?? '')
     .split(',')
     .map((s) => s.trim())

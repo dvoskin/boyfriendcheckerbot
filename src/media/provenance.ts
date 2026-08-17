@@ -176,15 +176,5 @@ export async function analyzeImage(buf: Buffer, now: string): Promise<Finding[]>
     });
   }
 
-  findings.push({
-    source: 'image',
-    label: 'Reverse image',
-    title: 'Reverse search not run',
-    detail:
-      'Google Lens and TinEye both need a publicly fetchable URL. Do not hand them the Telegram file URL — it embeds your bot token. Add an S3 presigned upload step, then query SerpAPI google_lens with that URL.',
-    retrievedAt: now,
-    confidence: 1,
-  });
-
   return findings;
 }
