@@ -217,7 +217,7 @@ export const enformionSource: Source = {
     findings.push({
       source: 'enformion',
       label: 'Identity',
-      title: `👤 His real name: ${displayName}${age ? `, age ${age}` : ''}`,
+      title: `👤 Real name: ${displayName}${age ? `, age ${age}` : ''}`,
       detail: [
         where && `Lives in: ${where}`,
         dob && `Birthday on file: ${dob}`,
@@ -278,7 +278,7 @@ export const enformionSource: Source = {
         findings.push({
           source: 'enformion',
           label: 'Relatives',
-          title: `👨‍👩‍👧 His family (${list.length})`,
+          title: `👨‍👩‍👧 Their family (${list.length})`,
           detail: [list.slice(0, 12).join('\n'), 'Same last name usually = parents/siblings. A much younger one could be a kid — worth noticing.'].join('\n'),
           retrievedAt: ctx.now,
           confidence: 0.6,
@@ -294,7 +294,7 @@ export const enformionSource: Source = {
       findings.push({
         source: 'enformion',
         label: 'Associates',
-        title: `👯‍♀️ People in his circle (${associates.length})`,
+        title: `👯‍♀️ People in their circle (${associates.length})`,
         detail: associates.slice(0, 8).join('\n'),
         retrievedAt: ctx.now,
         confidence: 0.5,
@@ -313,7 +313,7 @@ export const enformionSource: Source = {
       findings.push({
         source: 'enformion',
         label: 'Phones',
-        title: `📱 His phone numbers (${phones.length})`,
+        title: `📱 Their phone numbers (${phones.length})`,
         detail: phones.slice(0, 6).join('\n'),
         retrievedAt: ctx.now,
         confidence: 0.6,
@@ -327,7 +327,7 @@ export const enformionSource: Source = {
       findings.push({
         source: 'enformion',
         label: 'Emails',
-        title: `📧 His emails (${emails.length})`,
+        title: `📧 Their emails (${emails.length})`,
         detail: emails.slice(0, 6).join('\n'),
         retrievedAt: ctx.now,
         confidence: 0.6,
@@ -341,7 +341,7 @@ export const enformionSource: Source = {
       findings.push({
         source: 'enformion',
         label: 'Addresses',
-        title: `🏠 Places he's lived (${addrList.length})`,
+        title: `🏠 Places they've lived (${addrList.length})`,
         detail: addrList.slice(0, 6).join('\n'),
         retrievedAt: ctx.now,
         confidence: 0.55,

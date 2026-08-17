@@ -208,7 +208,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   );
   if (safety.length) {
     safety.sort((a, b) => b.confidence - a.confidence);
-    const s = ['🛡️ <b>Is he safe?</b>', ''];
+    const s = ['🛡️ <b>Are they safe?</b>', ''];
     for (const f of safety) {
       s.push(f.url ? `• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>` : `• ${escapeHtml(f.title)}`);
       const first = f.detail?.split('\n')[0];
@@ -220,7 +220,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   // ── 3.5 The real him — the richest personal data, kept high ──────────────
   const deep = all.filter((f) => f.source === 'enformion' && f.label !== 'Criminal record');
   if (deep.length) {
-    const d = ['💜 <b>The real him</b>', ''];
+    const d = ['💜 <b>Who they really are</b>', ''];
     for (const f of deep) {
       d.push(`<b>${escapeHtml(f.title)}</b>`);
       if (f.detail) for (const line of f.detail.split('\n')) d.push(escapeHtml(line));
@@ -286,7 +286,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
       acct.push('', '🤔 <b>Same username — could be someone else:</b>');
       for (const f of weak.slice(0, 15)) acct.push(`• <a href="${escapeHtml(f.url!)}">${escapeHtml(acctText(f))}</a>`);
     }
-    acct.push('', '<i>💡 Same username ≠ same person, babe. Check the profile pics match before you trust it.</i>');
+    acct.push('', '<i>💡 Same username ≠ same person. Check the profile pics match before you trust it.</i>');
     sections.push(acct.join('\n'));
   }
 
@@ -360,13 +360,13 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     seed.kind === 'phone' ||
     all.some((f) => f.source === 'phone') ||
     all.some((f) => f.source === 'enformion' && f.label === 'Phones');
-  if (!haveEmail) nudges.push('📧 his <b>email</b> — finds more accounts + breach checks');
-  if (!havePhone) nudges.push('📱 his <b>phone</b> — tells you the real registered name');
-  nudges.push('📸 his <b>photo</b> (as a File) — catches catfish + stolen pics');
+  if (!haveEmail) nudges.push('📧 their <b>email</b> — finds more accounts + breach checks');
+  if (!havePhone) nudges.push('📱 their <b>phone</b> — tells you the real registered name');
+  nudges.push('📸 their <b>photo</b> (as a File) — catches catfish + stolen pics');
   sections.push(['💌 <b>Want me to dig deeper?</b> Send me:', '', ...nudges].join('\n'));
 
   // ── 9. Footer ────────────────────────────────────────────────────────────
-  sections.push(`🔔 Want me to keep tabs on him 24/7? Send  <code>/watch ${escapeHtml(seed.raw)}</code> 💖`);
+  sections.push(`🔔 Want me to keep tabs on them 24/7? Send  <code>/watch ${escapeHtml(seed.raw)}</code> 💖`);
 
   return chunk(sections);
 }

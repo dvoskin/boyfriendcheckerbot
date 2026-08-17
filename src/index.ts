@@ -54,22 +54,22 @@ const TERMS = [
 ].join('\n');
 
 const HELP = [
-  '<b>You’re in! 🎉 Let’s see who he really is 👀</b>',
+  '<b>You’re in! 🎉 Let’s see who they really are 👀</b>',
   '',
   'Just send me <b>anything you’ve got</b> — no commands, no fuss. I’ll figure it out:',
   '',
-  '💬 his <b>@username</b>   →  like  <code>@johndoe</code>',
-  '🧑 his <b>name</b>   →  like  <code>John Smith</code>',
-  '📧 his <b>email</b>   →  like  <code>john@gmail.com</code>',
-  '📱 his <b>phone</b>   →  like  <code>+1 305 555 0199</code>',
-  '📸 his <b>photo</b>   →  send it as a <b>File 📎</b> (not compressed!) so the hidden data survives',
+  '💬 their <b>@username</b>   →  like  <code>@johndoe</code>',
+  '🧑 their <b>name</b>   →  like  <code>John Smith</code>',
+  '📧 their <b>email</b>   →  like  <code>john@gmail.com</code>',
+  '📱 their <b>phone</b>   →  like  <code>+1 305 555 0199</code>',
+  '📸 their <b>photo</b>   →  send it as a <b>File 📎</b> (not compressed!) so the hidden data survives',
   '',
   'Then just wait ~15 sec while I dig. 🔍✨',
   '',
   '🔔 Want me to <b>keep watching</b> someone? Send <code>/watch @handle</code> and I’ll ping you when anything changes.',
   '   (see them with <code>/watchlist</code>, stop with <code>/unwatch</code>)',
   '',
-  '<i>Not sure? Just send his @ or his name and see. Try  torvalds  to test me. 😉</i>',
+  '<i>Not sure? Just send their @ or their name and see. Try  torvalds  to test me. 😉</i>',
 ].join('\n');
 
 /** Values that mean the user typed the placeholder instead of a real target. */
@@ -78,7 +78,7 @@ const PLACEHOLDER_VALUES = new Set(['handle', 'value', 'username', 'name', 'him'
 const NUDGE = [
   '🤔 Hmm, I need something to go on!',
   '',
-  'Just send me his <b>@username</b>, <b>name</b>, <b>email</b>, <b>phone</b>, or a <b>photo</b> 📸 — ',
+  'Just send me their <b>@username</b>, <b>name</b>, <b>email</b>, <b>phone</b>, or a <b>photo</b> 📸 — ',
   'no slash needed. For example:  <code>@johndoe</code>  or  <code>John Smith</code>',
 ].join('\n');
 
@@ -205,7 +205,7 @@ async function handleLookup(ctx: Context, subject: Subject): Promise<void> {
 
 /** Girly, non-technical progress lines shown while a trace runs. */
 const TRACE_STEPS = [
-  '🔍 Digging into his footprint, hold on…',
+  '🔍 Digging into their footprint, hold on…',
   '🕸️ Connecting all the dots…',
   '📚 Snooping through the archives…',
   '🛡️ Running the safety checks…',
@@ -238,9 +238,9 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     if (findingTotal === 0) {
       await ctx.reply(
         [
-          '🤷‍♀️ Hmm, came up empty on that one, babe.',
+          '🤷‍♀️ Hmm, came up empty on that one.',
           '',
-          'Could mean he keeps a low profile — or I just need a better angle. Try sending his:',
+          'Could mean they keep a low profile — or I just need a better angle. Try sending his:',
           '📧 email · 📱 phone · 📸 photo (as a File) · or a different @username 💫',
         ].join('\n'),
         { parse_mode: 'HTML' },
@@ -517,7 +517,7 @@ async function main(): Promise<void> {
     // An unregistered slash command (e.g. "/tracehandle") lands here.
     if (text.startsWith('/')) {
       await ctx.reply(
-        `🤔 I don’t know that command. Skip the slash — just send his <b>@username</b>, <b>name</b>, <b>email</b>, <b>phone</b>, or a <b>photo</b> 📸`,
+        `🤔 I don’t know that command. Skip the slash — just send their <b>@username</b>, <b>name</b>, <b>email</b>, <b>phone</b>, or a <b>photo</b> 📸`,
         { parse_mode: 'HTML' },
       );
       return;
@@ -545,7 +545,7 @@ async function main(): Promise<void> {
           );
           await ctx.reply(
             [
-              `🔎 I found <b>${candidates.length} people</b> named ${escapeHtml(seed.raw)}. Which one is he? 👇`,
+              `🔎 I found <b>${candidates.length} people</b> named ${escapeHtml(seed.raw)}. Which one? 👇`,
               '',
               ...lines,
               '',
