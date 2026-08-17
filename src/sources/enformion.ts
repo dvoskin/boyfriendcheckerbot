@@ -115,6 +115,32 @@ export const enformionSource: Source = {
     const p = people[0]!;
     const findings: Finding[] = [];
     const displayName = nameOf(p) || subject.raw;
+
+    // Wrong-person guard. Aggregators fall back to a "closest" record when there
+    // is no real match — which is how a search for "Ariel Voskin" returned
+    // "Michael Voskian" and showed a stranger's family and emails as his. The
+    // first name is the reliable discriminator: Daniel→Daniel is fine (a last
+    // name can be anglicised), but Ariel→Michael is a different human. If the
+    // first name doesn't line up, refuse to present the record.
+    const returnedFirst = (str(get(get(p, 'Name', 'name'), 'FirstName', 'firstName')) ?? displayName.split(/\s+/)[0] ?? '').toLowerCase();
+    const searchedFirst = np.first.toLowerCase();
+    const firstOk =
+      !returnedFirst ||
+      returnedFirst === searchedFirst ||
+      returnedFirst.startsWith(searchedFirst) ||
+      searchedFirst.startsWith(returnedFirst);
+    if (!firstOk) {
+      return [
+        {
+          source: 'enformion',
+          label: 'Deep background',
+          title: `🤷‍♀️ No confident records match for ${subject.raw}`,
+          detail: `The closest record is a different person (${displayName}) — so I’m NOT showing their family, phones or addresses as his. Try adding his state (e.g. "${subject.raw} | NY") or his exact legal name.`,
+          retrievedAt: ctx.now,
+          confidence: 0.4,
+        },
+      ];
+    }
     const addresses = arr(get(p, 'Addresses', 'addresses'));
     const a0 = addresses[0];
     const where = a0 ? `${str(get(a0, 'City', 'city')) ?? ''} ${str(get(a0, 'State', 'state')) ?? ''}`.trim() : '';
@@ -143,29 +169,40 @@ export const enformionSource: Source = {
     const indHas = (...keys: string[]) => truthy(get(ind, ...keys));
 
     const relatives = arr(get(p, 'RelativesSummary', 'relativesSummary', 'Relatives', 'relatives'));
-    const spouse = relatives.find((r) => /spouse|wife|husband/i.test(str(get(r, 'Relationship', 'relationship')) ?? ''));
+    const relOf = (r: any) => str(get(r, 'Relationship', 'relationship', 'RelationshipType', 'relationshipType'));
+    const spouse = relatives.find((r) => /spouse|wife|husband/i.test(relOf(r) ?? ''));
 
-    const relStatus: string[] = [];
-    if (indHas('marriages', 'marriage', 'married')) relStatus.push('💍 Marriage record(s) on file');
-    if (indHas('divorces', 'divorce', 'divorced')) relStatus.push('💔 Divorce record(s) on file');
-    if (spouse) relStatus.push(`💍 Possible spouse: ${nameOf(spouse)}`);
-    if (relStatus.length) {
-      findings.push({
-        source: 'enformion',
-        label: 'Relationship status',
-        title: relStatus[0]!,
-        detail: [relStatus.slice(1).join('\n'), 'Public records — confirm before believing it.'].filter(Boolean).join('\n'),
-        retrievedAt: ctx.now,
-        confidence: 0.6,
-      });
-    }
+    // Always answer "is he married?" explicitly — even a clean result is useful.
+    const marriedRec = indHas('marriages', 'marriage', 'married') || Boolean(spouse);
+    const divorcedRec = indHas('divorces', 'divorce', 'divorced');
+    const statusLine = marriedRec
+      ? spouse
+        ? `💍 Marriage record found — possible spouse: ${nameOf(spouse)}`
+        : '💍 Marriage record on file'
+      : '💚 No marriage record surfaced';
+    findings.push({
+      source: 'enformion',
+      label: 'Relationship status',
+      title: statusLine,
+      detail: [
+        divorcedRec && '💔 Divorce record also on file',
+        !marriedRec && 'No public marriage record came up — this does NOT fully rule it out (records lag and vary by state).',
+        'Public records — confirm before believing it.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      retrievedAt: ctx.now,
+      confidence: 0.55,
+    });
 
     if (relatives.length) {
       const list = relatives
         .map((r) => {
           const nm = nameOf(r);
-          const rel = str(get(r, 'Relationship', 'relationship'));
-          return nm ? `${nm}${rel ? ` (${rel})` : ''}` : '';
+          const rel = relOf(r);
+          const age = str(get(r, 'Age', 'age'));
+          const tag = [rel, age && `age ${age}`].filter(Boolean).join(', ');
+          return nm ? `${nm}${tag ? ` — ${tag}` : ''}` : '';
         })
         .filter(Boolean);
       if (list.length) {
@@ -173,7 +210,7 @@ export const enformionSource: Source = {
           source: 'enformion',
           label: 'Relatives',
           title: `👨‍👩‍👧 Relatives & family (${list.length})`,
-          detail: list.slice(0, 10).join('\n'),
+          detail: [list.slice(0, 12).join('\n'), 'Relationship labels aren’t always in the data — shared last names usually = immediate family.'].join('\n'),
           retrievedAt: ctx.now,
           confidence: 0.6,
         });

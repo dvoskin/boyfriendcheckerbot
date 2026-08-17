@@ -200,8 +200,31 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   const strong = social.filter((f) => f.confidence >= 0.7);
   const weak = social.filter((f) => f.confidence < 0.7);
 
+  // Direct social profiles found on the web (his actual Instagram/LinkedIn/etc).
+  const socialSeen = new Set<string>();
+  const socialProfiles = all.filter((f) => {
+    if (f.source !== 'search' || !f.url) return false;
+    if (!/(?:instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com\//i.test(f.url)) return false;
+    if (socialSeen.has(f.url)) return false;
+    socialSeen.add(f.url);
+    return true;
+  });
+  const platformName = (url: string): string => {
+    const m = /(instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com/i.exec(url);
+    const p = m?.[1]?.toLowerCase();
+    return p === 'x' ? 'X/Twitter' : p ? p[0]!.toUpperCase() + p.slice(1) : 'Profile';
+  };
+
+  if (socialProfiles.length) {
+    const sp = ['🩷 <b>Social media</b>', ''];
+    for (const f of socialProfiles.slice(0, 8)) {
+      sp.push(`• <b>${escapeHtml(platformName(f.url!))}:</b> <a href="${escapeHtml(f.url!)}">${escapeHtml(f.title)}</a>`);
+    }
+    sections.push(sp.join('\n'));
+  }
+
   if (strong.length || weak.length) {
-    const acct = ['📱 <b>His accounts</b>'];
+    const acct = ['📱 <b>Other accounts under this handle</b>'];
     if (strong.length) {
       acct.push('', '✅ <b>Very likely him:</b>');
       for (const f of strong) acct.push(`• <a href="${escapeHtml(f.url!)}">${escapeHtml(acctText(f))}</a>`);

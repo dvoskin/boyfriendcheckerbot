@@ -102,17 +102,19 @@ export const searchSource: Source = {
       for (const hit of result.value) {
         if (seen.has(hit.url)) continue;
         seen.add(hit.url);
+        // A result that IS a social profile URL is high-signal even from a plain
+        // query — and we want the graph to pivot on it (extract the handle and
+        // enumerate his other accounts), which needs it above the pivot bar.
+        const isSocial = /(?:instagram|facebook|tiktok|twitter|x|linkedin|threads|pinterest)\.com\//i.test(hit.url);
         findings.push({
           source: 'search',
-          label: isSiteScoped ? 'Platform profile' : 'Web',
+          label: isSocial ? 'Social profile' : isSiteScoped ? 'Platform profile' : 'Web',
           title: hit.title.slice(0, 120),
           detail: hit.snippet?.replace(/\s+/g, ' ').slice(0, 250),
           url: hit.url,
           retrievedAt: ctx.now,
-          // Site-scoped hits are the whole point of this source and are much
-          // more likely to be the subject than a generic web result.
-          confidence: isSiteScoped ? 0.65 : 0.4,
-          extra: { query },
+          confidence: isSocial || isSiteScoped ? 0.65 : 0.4,
+          extra: { query, isSocial },
         });
       }
     });

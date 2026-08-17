@@ -102,11 +102,105 @@ const INFRA_HOSTS = new Set([
   'letsencrypt.org',
   'sectigo.com',
   'digicert.com',
+  'awsdns.org',
+  'awsdns.net',
+  'awsdns.co.uk',
+  'bandwidth.com',
+]);
+
+/**
+ * Email providers. The domain after the @ in an email is the mail host, never
+ * "his website" — extracting it produced nonsense like "his website: yahoo.com".
+ */
+const EMAIL_PROVIDERS = new Set([
+  'gmail.com',
+  'yahoo.com',
+  'ymail.com',
+  'hotmail.com',
+  'outlook.com',
+  'live.com',
+  'msn.com',
+  'aol.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'proton.me',
+  'protonmail.com',
+  'gmx.com',
+  'mail.com',
+  'zoho.com',
+  'rcn.com',
+  'charter.net',
+  'comcast.net',
+  'verizon.net',
+  'att.net',
+  'sbcglobal.net',
+  'cox.net',
+  'earthlink.net',
+  'optonline.net',
+  'bellsouth.net',
+  'roadrunner.com',
+]);
+
+/**
+ * Bare public suffixes. Reducing "sub.example.co.uk" to a naive last-two labels
+ * yields "co.uk", which is not a registrable domain — reject these outright.
+ */
+const PUBLIC_SUFFIXES = new Set([
+  'co.uk',
+  'org.uk',
+  'ac.uk',
+  'gov.uk',
+  'me.uk',
+  'com.au',
+  'net.au',
+  'org.au',
+  'co.nz',
+  'co.jp',
+  'com.br',
+  'co.in',
+  'com.mx',
 ]);
 
 const EMAIL_RE = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/gi;
 const DOMAIN_RE = /\b((?:[a-z0-9-]+\.)+[a-z]{2,})\b/gi;
 const HANDLE_RE = /(?:^|[\s(])@([a-z0-9._-]{2,40})\b/gi;
+
+/**
+ * Social profile URLs → the username inside them. This is what turns a NAME
+ * search into an account search: a web result links to instagram.com/danny_vosk,
+ * we pull "danny_vosk", and the username enumerator then finds his accounts
+ * everywhere else. Handles the per-platform path shapes.
+ */
+const SOCIAL_URL_RES: RegExp[] = [
+  /(?:instagram\.com|facebook\.com|twitter\.com|x\.com|github\.com|pinterest\.com)\/([a-z0-9._-]{2,40})(?:[/?#]|$)/gi,
+  /(?:tiktok\.com|threads\.net)\/@([a-z0-9._-]{2,40})(?:[/?#]|$)/gi,
+  /(?:t\.me|telegram\.me)\/([a-z0-9._-]{2,40})(?:[/?#]|$)/gi,
+];
+
+/** URL path segments that are pages, not usernames — never pivot on these. */
+const NOT_A_HANDLE = new Set([
+  'p',
+  'reel',
+  'reels',
+  'explore',
+  'stories',
+  'about',
+  'help',
+  'login',
+  'share',
+  'watch',
+  'events',
+  'groups',
+  'pages',
+  'hashtag',
+  'search',
+  'home',
+  'i',
+  'photo',
+  'photos',
+  'media',
+]);
 
 function registrableHost(raw: string): string | null {
   const host = raw
@@ -127,6 +221,10 @@ function registrableHost(raw: string): string | null {
   if (INFRA_HOSTS.has(lastTwo) || INFRA_HOSTS.has(lastThree) || INFRA_HOSTS.has(host)) {
     return null;
   }
+  if (EMAIL_PROVIDERS.has(lastTwo) || EMAIL_PROVIDERS.has(host)) return null;
+  // A bare public suffix ("co.uk") is not a real domain; if the host is exactly
+  // that, there's no registrable name to pivot on.
+  if (PUBLIC_SUFFIXES.has(lastTwo) || PUBLIC_SUFFIXES.has(host)) return null;
   return lastTwo;
 }
 
@@ -156,6 +254,17 @@ export function extractPivots(finding: Finding, origin: Subject): Pivot[] {
 
   const haystack = [finding.title, finding.detail ?? ''].join('\n');
 
+  // Social profile URLs (usually the finding's own link) → username to enumerate.
+  const urlText = `${finding.url ?? ''}\n${haystack}`;
+  for (const re of SOCIAL_URL_RES) {
+    for (const m of urlText.matchAll(re)) {
+      const handle = m[1]!.toLowerCase();
+      if (NOT_A_HANDLE.has(handle) || /^\d+$/.test(handle)) continue;
+      const key = `username:${handle}`;
+      if (!out.has(key)) out.set(key, { kind: 'username', value: handle, reason: `social handle from ${finding.label}` });
+    }
+  }
+
   for (const m of haystack.matchAll(EMAIL_RE)) {
     const value = m[0].toLowerCase();
     const key = `email:${value}`;
@@ -174,7 +283,10 @@ export function extractPivots(finding: Finding, origin: Subject): Pivot[] {
     if (!out.has(key)) out.set(key, { kind: 'username', value, reason: `handle in ${finding.label}` });
   }
 
-  for (const m of haystack.matchAll(DOMAIN_RE)) {
+  // Strip emails first: the domain half of an email is the mail provider, not a
+  // personal website, so it must not be matched as a domain pivot.
+  const domainHaystack = haystack.replace(EMAIL_RE, ' ');
+  for (const m of domainHaystack.matchAll(DOMAIN_RE)) {
     const base = registrableHost(m[1]!);
     if (!base) continue;
     const key = `domain:${base}`;
