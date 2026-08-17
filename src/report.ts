@@ -172,11 +172,30 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   score -= dossier.signals.filter((s) => s.level === 'amber').length * 4;
   if (dossier.signals.some((s) => /thin or freshly/i.test(s.text))) score -= 8;
   score = Math.max(3, Math.min(100, score));
-  const vibe =
-    score >= 75 ? '🟢 looking good' : score >= 45 ? '🟡 a few yellow flags' : '🔴 serious red flags';
+
+  // Data richness — a no-data person must NOT read as "looking good" (that implies
+  // we checked and they're safe; really we just found nothing).
+  const hasDeep = all.some((f) => f.source === 'enformion' && f.label === 'Identity');
+  const confirmedAccts = all.filter((f) => f.confidence >= 0.7 && ['usernames', 'github', 'bluesky'].includes(f.source)).length;
+  const hasRecords = all.some(
+    (f) => ['sec', 'nppes', 'fec', 'finra', 'courtlistener', 'wikipedia', 'academic', 'opencorporates'].includes(f.source) && f.confidence >= 0.5,
+  );
+  const hasBreach = all.some((f) => f.source === 'hibp' && /breach/i.test(f.title));
+  const hasRedFlag = redFlagCount > 0 || all.some((f) => f.source === 'registry' && /🔴/.test(f.title));
+  const thin = !hasDeep && confirmedAccts < 2 && !hasRecords && !hasBreach && !hasRedFlag;
+
+  const vibe = thin
+    ? '🤷 not enough info yet'
+    : score >= 75
+      ? '🟢 looking good'
+      : score >= 45
+        ? '🟡 a few yellow flags'
+        : '🔴 serious red flags';
 
   const summary = [
-    `💅 <b>The tea on ${escapeHtml(seed.raw)}</b>`,
+    '♟️ <b>CHECKMATE REPORT</b>',
+    '━━━━━━━━━━━━━━━',
+    `🎯 <b>${escapeHtml(seed.raw)}</b>`,
     '',
     `💯 <b>Vibe check:</b> ${score}/100 — ${vibe}`,
     `${light} <b>Quick take:</b> ${take}`,
@@ -198,6 +217,17 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     summary.push('', '🚩 <b>Red flags:</b> none so far ✨');
   }
   sections.push(summary.join('\n'));
+
+  // ── 1.7 Thin-footprint callout — turn an empty result into a next step ───
+  if (thin) {
+    const tips: string[] = ['⚠️ <b>Not much came back on this one.</b>', 'To pull the <b>full report</b>, give me a sharper lead:', ''];
+    if (seed.kind === 'person') tips.push(`📍 add a <b>city</b> →  <code>${escapeHtml(seed.raw)} | Miami</code>`);
+    tips.push('💬 their <b>@username</b> — best for socials');
+    tips.push('📧 their <b>email</b> — hidden accounts + breaches');
+    tips.push('📸 their <b>photo</b> — catfish check');
+    tips.push('', '<i>Common names with no city come back thin — that’s how public records work, not a miss. 💛</i>');
+    sections.push(tips.join('\n'));
+  }
 
   // ── 2. The AI read comes SECOND — the story before the evidence ──────────
   if (dossier.narrative) sections.push(`💭 <b>My honest read</b>\n\n${escapeHtml(dossier.narrative)}`);
