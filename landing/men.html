@@ -1,0 +1,311 @@
+<title>Vetted for Men</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* Committed dark, masculine "intel" world. All colors painted explicitly so it
+     holds on any host ground. */
+  :root {
+    --ink: #0a0f1a;
+    --ink-2: #0e1626;
+    --panel: #121d31;
+    --panel-2: #16233b;
+    --line: #223148;
+    --ice: #eaf1fb;
+    --mute: #93a4bf;
+    --electric: #3b82f6;
+    --cyan: #22d3ee;
+    --danger: #f43f5e;
+    --ok: #34d399;
+    --gold: #f5b638;
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Roboto Mono", Menlo, monospace;
+    --maxw: 1120px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--sans); color: var(--ice); background: var(--ink);
+    line-height: 1.6; overflow-x: hidden; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  a { color: inherit; text-decoration: none; }
+  .mono { font-family: var(--mono); letter-spacing: 0.5px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: linear-gradient(135deg, var(--electric), #2563eb);
+    color: #fff; font-weight: 700; font-size: 1.02rem; padding: 15px 30px; border-radius: 12px;
+    border: none; cursor: pointer; box-shadow: 0 12px 30px rgba(59,130,246,0.35);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 18px 40px rgba(59,130,246,0.5); }
+  .btn:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+  .btn.ghost { background: transparent; color: var(--ice); box-shadow: inset 0 0 0 1px var(--line); }
+
+  nav {
+    position: sticky; top: 0; z-index: 50; background: rgba(10,15,26,0.8);
+    backdrop-filter: blur(14px); border-bottom: 1px solid var(--line);
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 66px; }
+  .logo { font-weight: 800; font-size: 1.35rem; letter-spacing: -0.5px; display: flex; align-items: center; gap: 9px; }
+  .logo .mk { color: var(--electric); }
+  nav .btn { padding: 10px 20px; font-size: 0.92rem; }
+
+  .hero { position: relative; padding: 76px 0 96px; overflow: hidden; }
+  #net { position: absolute; inset: 0; z-index: 0; }
+  .hero-glow { position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(800px 400px at 80% -10%, rgba(59,130,246,0.22), transparent 60%),
+                radial-gradient(600px 400px at 0% 20%, rgba(34,211,238,0.12), transparent 55%); }
+  .hero .wrap { position: relative; z-index: 2; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 40px; align-items: center; }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono);
+    background: var(--panel); color: var(--cyan); font-weight: 600; font-size: 0.78rem;
+    padding: 8px 15px; border-radius: 8px; letter-spacing: 1px; text-transform: uppercase;
+    border: 1px solid var(--line); margin-bottom: 22px;
+  }
+  h1 { font-size: clamp(2.6rem, 6vw, 4.2rem); line-height: 1.03; font-weight: 800; letter-spacing: -1.5px; text-wrap: balance; margin-bottom: 20px; }
+  h1 .grad { background: linear-gradient(120deg, var(--electric), var(--cyan)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .sub { font-size: 1.18rem; color: var(--mute); max-width: 32ch; margin-bottom: 30px; }
+  .cta-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .microcopy { margin-top: 16px; font-size: 0.88rem; color: var(--mute); display: flex; gap: 8px; align-items: center; }
+
+  .phone { justify-self: center; width: 300px; max-width: 100%; background: #05080f; border: 1px solid var(--line); border-radius: 34px; padding: 12px; box-shadow: 0 40px 90px rgba(0,0,0,0.6); position: relative; }
+  .screen { background: linear-gradient(180deg, #0b1220, #0d1626); border-radius: 24px; padding: 22px 15px; height: 480px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { border-radius: 12px; padding: 11px 13px; font-size: 0.82rem; opacity: 0; transform: translateY(10px); animation: pop 0.5s forwards; }
+  .msg.me { background: linear-gradient(135deg, var(--electric), #2563eb); color: #fff; align-self: flex-end; font-weight: 600; }
+  .msg.bot { background: var(--panel-2); border: 1px solid var(--line); color: var(--ice); align-self: flex-start; }
+  .msg.bot b { color: var(--cyan); }
+  .score { font-family: var(--mono); color: var(--ok); font-weight: 700; }
+  .msg:nth-child(1) { animation-delay: 0.2s; }
+  .msg:nth-child(2) { animation-delay: 0.9s; }
+  .msg:nth-child(3) { animation-delay: 1.7s; }
+  .msg:nth-child(4) { animation-delay: 2.5s; }
+  @keyframes pop { to { opacity: 1; transform: none; } }
+
+  section { padding: 84px 0; }
+  .kicker { text-align: center; font-family: var(--mono); color: var(--electric); font-weight: 600; letter-spacing: 2px; text-transform: uppercase; font-size: 0.78rem; margin-bottom: 12px; }
+  h2 { text-align: center; font-size: clamp(2rem, 4.5vw, 2.9rem); font-weight: 800; letter-spacing: -1px; text-wrap: balance; margin-bottom: 14px; }
+  .lead { text-align: center; color: var(--mute); font-size: 1.12rem; max-width: 54ch; margin: 0 auto 52px; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .step { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 30px 26px; }
+  .step .n { font-family: var(--mono); font-size: 1rem; color: var(--electric); font-weight: 700; letter-spacing: 1px; }
+  .step h3 { font-size: 1.25rem; margin: 10px 0 8px; font-weight: 700; }
+  .step p { color: var(--mute); }
+
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .feat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px; transition: transform 0.25s ease, border-color 0.25s ease; }
+  .feat:hover { transform: translateY(-5px); border-color: var(--electric); }
+  .feat .ico { font-size: 1.7rem; margin-bottom: 10px; display: block; }
+  .feat h3 { font-size: 1.06rem; font-weight: 700; margin-bottom: 6px; }
+  .feat p { font-size: 0.93rem; color: var(--mute); }
+
+  #pricing { background: linear-gradient(180deg, transparent, rgba(59,130,246,0.06)); }
+  .tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch; }
+  .tier { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 30px 22px; display: flex; flex-direction: column; position: relative; }
+  .tier.pop { border-color: var(--electric); box-shadow: 0 24px 50px rgba(59,130,246,0.2); }
+  .tier .tag { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: var(--electric); color: #fff; font-family: var(--mono); font-size: 0.68rem; font-weight: 700; padding: 5px 13px; border-radius: 7px; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
+  .tier h3 { font-size: 1.1rem; font-weight: 700; }
+  .tier .price { font-size: 2.4rem; font-weight: 800; letter-spacing: -1px; margin: 10px 0 2px; }
+  .tier .price span { font-size: 0.95rem; font-weight: 500; color: var(--mute); }
+  .tier .desc { color: var(--mute); font-size: 0.88rem; min-height: 40px; margin-bottom: 14px; }
+  .tier ul { list-style: none; display: flex; flex-direction: column; gap: 9px; margin-bottom: 22px; flex: 1; }
+  .tier li { font-size: 0.9rem; display: flex; gap: 9px; }
+  .tier li::before { content: "▹"; color: var(--electric); font-weight: 700; }
+  .tier .btn { width: 100%; justify-content: center; }
+
+  .trust { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  .chip { font-family: var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 11px 18px; font-weight: 600; font-size: 0.86rem; display: flex; gap: 8px; align-items: center; }
+
+  .final { text-align: center; }
+  .final-card { background: linear-gradient(135deg, #0e1a30, #0b1220); border: 1px solid var(--electric); border-radius: 24px; padding: 64px 32px; position: relative; overflow: hidden; }
+  .final-card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(600px 300px at 50% -30%, rgba(59,130,246,0.25), transparent 60%); }
+  .final-card > * { position: relative; }
+
+  footer { padding: 40px 0 56px; text-align: center; color: var(--mute); font-size: 0.88rem; border-top: 1px solid var(--line); }
+  footer .logo { justify-content: center; margin-bottom: 10px; font-size: 1.15rem; }
+  .switch { margin-top: 18px; font-size: 0.85rem; }
+  .switch a { color: var(--cyan); text-decoration: underline; }
+  .disclaimer { max-width: 60ch; margin: 14px auto 0; font-size: 0.78rem; opacity: 0.8; }
+
+  .reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  @media (max-width: 900px) {
+    .hero .wrap { grid-template-columns: 1fr; text-align: center; }
+    .sub { margin-inline: auto; } .cta-row, .microcopy, .eyebrow { justify-content: center; margin-inline: auto; }
+    .phone { margin-top: 20px; } .steps, .features { grid-template-columns: 1fr; } .tiers { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 560px) { .tiers { grid-template-columns: 1fr; } nav .btn { display: none; } }
+  @media (prefers-reduced-motion: reduce) { *, .reveal, .msg { animation: none !important; transition: none !important; opacity: 1 !important; transform: none !important; } }
+</style>
+
+<nav>
+  <div class="wrap">
+    <div class="logo">Vetted<span class="mk">/</span></div>
+    <a class="btn" href="#pricing">Run a check</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <canvas id="net"></canvas>
+  <div class="hero-glow"></div>
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">◆ know before you commit</span>
+      <h1>Don't get played. <span class="grad">Do your homework.</span></h1>
+      <p class="sub">Her name, @, number, or a photo — and in 15 seconds you'll know who she really is. Public records don't lie.</p>
+      <div class="cta-row">
+        <a class="btn" href="#pricing">Get your first check free</a>
+        <a class="btn ghost" href="#how">How it works</a>
+      </div>
+      <div class="microcopy">🔒 100% legal · public records only · fully private</div>
+    </div>
+
+    <div class="phone" aria-hidden="true">
+      <div class="screen">
+        <div class="msg me">Check: Jessica R.</div>
+        <div class="msg bot"><b>REPORT — Jessica R.</b><br /><span class="score">Vibe check: 88/100 ✓</span></div>
+        <div class="msg bot"><b>Snapshot</b><br />29 · Austin TX · no marriage record<br />real job confirmed · no red flags</div>
+        <div class="msg bot"><b>Safety</b><br />✓ clean court &amp; news · not a known scammer</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="how">
+    <div class="wrap">
+      <p class="kicker reveal">three steps</p>
+      <h2 class="reveal">Intel in under a minute</h2>
+      <p class="lead reveal">No app to install. Message the bot, get a full report back.</p>
+      <div class="steps">
+        <div class="step reveal"><div class="n">01 / INPUT</div><h3>Send what you have</h3><p>Her name, Instagram @, phone, or a photo. Anything is enough to start.</p></div>
+        <div class="step reveal"><div class="n">02 / SCAN</div><h3>We pull the records</h3><p>25 sources — public records, socials, court, breaches — cross-referenced instantly.</p></div>
+        <div class="step reveal"><div class="n">03 / REPORT</div><h3>Get the full picture</h3><p>One clean brief: who she is, is she single, is she legit, and what she left out.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="find">
+    <div class="wrap">
+      <p class="kicker reveal">what you'll know</p>
+      <h2 class="reveal">The stuff that actually matters</h2>
+      <p class="lead reveal">Pulled from legal public records — not guesses.</p>
+      <div class="features">
+        <div class="feat reveal"><span class="ico">💍</span><h3>Single or married?</h3><p>Marriage &amp; divorce records — is she as available as she says?</p></div>
+        <div class="feat reveal"><span class="ico">🎭</span><h3>Catfish check</h3><p>Reverse-search her photos to see if they're stolen or fake.</p></div>
+        <div class="feat reveal"><span class="ico">🛡️</span><h3>Safety &amp; records</h3><p>Criminal &amp; court records, scam-database hits, restraining orders.</p></div>
+        <div class="feat reveal"><span class="ico">📱</span><h3>Real socials</h3><p>Every account she has — including the ones she never mentioned.</p></div>
+        <div class="feat reveal"><span class="ico">🔓</span><h3>Hidden accounts</h3><p>Breaches reveal dating-app &amp; secret accounts tied to her email.</p></div>
+        <div class="feat reveal"><span class="ico">💼</span><h3>Does her story hold up?</h3><p>Real job, employer, businesses — is she who she claims to be?</p></div>
+        <div class="feat reveal"><span class="ico">👥</span><h3>Family &amp; connections</h3><p>Relatives and known associates — the full network.</p></div>
+        <div class="feat reveal"><span class="ico">🕰️</span><h3>Her past</h3><p>Deleted &amp; archived profiles — what she tried to scrub.</p></div>
+        <div class="feat reveal"><span class="ico">🔔</span><h3>24/7 monitoring</h3><p>Get alerted the second anything about her changes.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="wrap">
+      <p class="kicker reveal">plans</p>
+      <h2 class="reveal">Cheaper than getting burned</h2>
+      <p class="lead reveal">First check is free. No subscription trap.</p>
+      <div class="tiers">
+        <div class="tier reveal">
+          <h3>Recon</h3><div class="price">Free</div>
+          <p class="desc">Your first check, on us.</p>
+          <ul><li>Is she real?</li><li>Public socials</li><li>Basic safety flags</li></ul>
+          <a class="btn ghost" href="#" data-bot>Start free</a>
+        </div>
+        <div class="tier pop reveal">
+          <div class="tag">most picked</div>
+          <h3>Full Report</h3><div class="price">$19.99<span>/check</span></div>
+          <p class="desc">One complete deep report.</p>
+          <ul><li>Everything unlocked</li><li>Marriage, family, records</li><li>Hidden &amp; dating accounts</li><li>Court &amp; safety scan</li></ul>
+          <a class="btn" href="#" data-bot>Run the check</a>
+        </div>
+        <div class="tier reveal">
+          <h3>Squad Pack</h3><div class="price">$39.99<span>/3 checks</span></div>
+          <p class="desc">Three deep reports — save $20.</p>
+          <ul><li>3 full deep checks</li><li>Never expires</li></ul>
+          <a class="btn ghost" href="#" data-bot>Get the pack</a>
+        </div>
+        <div class="tier reveal">
+          <h3>Always On</h3><div class="price">$49.99<span>/mo</span></div>
+          <p class="desc">Unlimited checks + monitoring.</p>
+          <ul><li>Unlimited deep checks</li><li>Watch anyone, get alerts</li><li>Cancel anytime</li></ul>
+          <a class="btn ghost" href="#" data-bot>Go unlimited</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="trust" style="padding-top:20px">
+    <div class="wrap">
+      <div class="trust">
+        <div class="chip reveal">🔒 100% legal</div>
+        <div class="chip reveal">🕵️ fully private</div>
+        <div class="chip reveal">📑 public records only</div>
+        <div class="chip reveal">🚫 no leaked data</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <div class="final-card reveal">
+        <h2>Stop guessing. Get the facts.</h2>
+        <p class="lead">First check is free. 15 seconds now beats months of regret.</p>
+        <a class="btn" href="#" data-bot>Run a check</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="logo">Vetted<span class="mk" style="color:var(--electric)">/</span></div>
+  <div>Know who she really is — before you commit.</div>
+  <div class="switch">Checking a guy instead? <a href="index.html">Switch to the women's version →</a></div>
+  <p class="disclaimer">Vetted aggregates publicly available records for personal safety and awareness. Not a consumer reporting agency; results may not be used for employment, housing, credit, or tenant screening. Use responsibly and legally.</p>
+</footer>
+
+<script>
+  // ---- particle network on the hero ----
+  (function () {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var c = document.getElementById("net"), hero = document.querySelector(".hero");
+    if (!c || !hero) return;
+    var ctx = c.getContext("2d"), W, H, pts;
+    function size() { W = c.width = hero.offsetWidth; H = c.height = hero.offsetHeight; }
+    function init() {
+      size(); pts = [];
+      var n = Math.min(70, Math.floor(W / 22));
+      for (var i = 0; i < n; i++) pts.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4 });
+    }
+    function tick() {
+      ctx.clearRect(0, 0, W, H);
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i]; p.x += p.vx; p.y += p.vy;
+        if (p.x < 0 || p.x > W) p.vx *= -1; if (p.y < 0 || p.y > H) p.vy *= -1;
+        ctx.fillStyle = "rgba(59,130,246,0.7)"; ctx.beginPath(); ctx.arc(p.x, p.y, 1.6, 0, 6.283); ctx.fill();
+        for (var j = i + 1; j < pts.length; j++) {
+          var q = pts[j], dx = p.x - q.x, dy = p.y - q.y, d = dx * dx + dy * dy;
+          if (d < 13000) { ctx.strokeStyle = "rgba(59,130,246," + (0.14 * (1 - d / 13000)) + ")"; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); }
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+    window.addEventListener("resize", init); init(); tick();
+  })();
+  // ---- scroll reveal ----
+  (function () {
+    var els = document.querySelectorAll(".reveal");
+    if (!("IntersectionObserver" in window)) { els.forEach(function (e) { e.classList.add("in"); }); return; }
+    var io = new IntersectionObserver(function (en) { en.forEach(function (e, i) { if (e.isIntersecting) { setTimeout(function () { e.target.classList.add("in"); }, (i % 4) * 70); io.unobserve(e.target); } }); }, { threshold: 0.14 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+  // ---- bot links (replace with your bot @username) ----
+  (function () { var BOT = "https://t.me/BoyfriendCheckerBot"; document.querySelectorAll("[data-bot]").forEach(function (a) { a.setAttribute("href", BOT); }); })();
+</script>
