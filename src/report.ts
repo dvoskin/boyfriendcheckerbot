@@ -97,6 +97,150 @@ export function renderFindings(subject: Subject, results: SourceResult[]): strin
 
 const SIGNAL_ICON = { red: '🔴', amber: '🟡', info: '🔵' } as const;
 
+/** Split a long section on line boundaries to respect Telegram's 4096 cap. */
+function chunk(sections: string[]): string[] {
+  const out: string[] = [];
+  for (const section of sections) {
+    if (section.length <= TELEGRAM_LIMIT) {
+      out.push(section);
+      continue;
+    }
+    let cur = '';
+    for (const line of section.split('\n')) {
+      if (cur.length + line.length + 1 > TELEGRAM_LIMIT) {
+        out.push(cur);
+        cur = line;
+      } else {
+        cur += (cur ? '\n' : '') + line;
+      }
+    }
+    if (cur.trim()) out.push(cur);
+  }
+  return out;
+}
+
+/**
+ * The reader-facing report. Built for a non-technical person checking someone
+ * out: safety first, plain words, clickable accounts, and honest hedging where
+ * the data is weak. No confidence numbers, no "selectors", no raw trees — those
+ * live in /g for power users. One clean story, top to bottom.
+ */
+export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier): string[] {
+  const all = graph.nodes.flatMap((n) => n.findings);
+  const sections: string[] = [];
+
+  // ── 1. Headline + traffic-light quick take + safety flags ────────────────
+  const hasRed = dossier.signals.some((s) => s.level === 'red');
+  const hasAmber = dossier.signals.some((s) => s.level === 'amber');
+  const light = hasRed ? '🔴' : hasAmber ? '🟡' : '🟢';
+  const take = hasRed
+    ? 'A few things worth looking at closely.'
+    : hasAmber
+      ? 'Mostly looks fine — a couple of things to double-check.'
+      : 'Nothing alarming jumped out.';
+
+  const head = [`🔎 <b>Report on ${escapeHtml(seed.raw)}</b>`, '', `${light} <b>Quick take:</b> ${take}`];
+
+  // Real flags (red/amber) go under "Worth a look"; neutral facts go below it as
+  // "Good to know", so a green report never looks like it raised alarms.
+  const flags = dossier.signals.filter((s) => s.level !== 'info');
+  const infos = dossier.signals.filter((s) => s.level === 'info');
+  if (flags.length) {
+    head.push('', '🚩 <b>Worth a look:</b>');
+    for (const s of [...flags].sort((a, b) => (a.level === 'red' ? -1 : 1))) {
+      head.push(`${SIGNAL_ICON[s.level]} ${escapeHtml(s.text)}`);
+    }
+  }
+  if (infos.length) {
+    head.push('', 'ℹ️ <b>Good to know:</b>');
+    for (const s of infos) head.push(`• ${escapeHtml(s.text)}`);
+  }
+  sections.push(head.join('\n'));
+
+  // ── 2. Accounts, split into "very likely him" vs "same handle, verify" ───
+  // Display text: site name alone for the enumerator, but "GitHub @handle" for
+  // GitHub/Bluesky so multiple distinct accounts don't all read as one word.
+  const acctText = (f: (typeof all)[number]): string =>
+    f.source === 'usernames' ? f.label : `${f.label} ${f.title}`;
+
+  const seen = new Set<string>();
+  const social = all.filter((f) => {
+    if (!f.url || !['usernames', 'github', 'bluesky'].includes(f.source)) return false;
+    // Drop below-0.5 fuzzy name-search hits — those are similarly-named strangers,
+    // not "his account", and listing them just confuses a lay reader.
+    if (f.confidence < 0.5) return false;
+    if (seen.has(f.url)) return false;
+    seen.add(f.url);
+    return true;
+  });
+  const strong = social.filter((f) => f.confidence >= 0.7);
+  const weak = social.filter((f) => f.confidence < 0.7);
+
+  if (strong.length || weak.length) {
+    const acct = ['📱 <b>Accounts under this name/handle</b>'];
+    if (strong.length) {
+      acct.push('', '✅ <b>Very likely him:</b>');
+      for (const f of strong) acct.push(`• <a href="${escapeHtml(f.url!)}">${escapeHtml(acctText(f))}</a>`);
+    }
+    if (weak.length) {
+      acct.push('', '🤔 <b>Same username — could be someone else:</b>');
+      for (const f of weak.slice(0, 15)) acct.push(`• <a href="${escapeHtml(f.url!)}">${escapeHtml(acctText(f))}</a>`);
+    }
+    acct.push('', '<i>⚠️ Same username ≠ same person. Check the profile photos match before you trust it.</i>');
+    sections.push(acct.join('\n'));
+  }
+
+  // ── 2.5 Public records & web mentions (the meat of a name search) ────────
+  const recSeen = new Set<string>();
+  const records = all.filter((f) => {
+    if (!['nppes', 'sec', 'courtlistener', 'search'].includes(f.source)) return false;
+    const key = f.url ?? f.title;
+    if (recSeen.has(key)) return false;
+    recSeen.add(key);
+    return true;
+  });
+  if (records.length) {
+    const rec = ['📄 <b>Public records &amp; web mentions</b>', ''];
+    for (const f of records.slice(0, 10)) {
+      const line = f.url ? `• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>` : `• ${escapeHtml(f.title)}`;
+      rec.push(line);
+      const first = f.detail?.split('\n')[0];
+      if (first && f.source !== 'search') rec.push(`  <i>${escapeHtml(first)}</i>`);
+    }
+    sections.push(rec.join('\n'));
+  }
+
+  // ── 3. Old / deleted profiles (the archive superpower) ───────────────────
+  const archived = all.filter((f) => f.source === 'wayback' && /archiv/i.test(`${f.label} ${f.title}`));
+  if (archived.length) {
+    const a = ['🕰️ <b>Old or deleted profiles</b>', '<i>These existed in the past — even if they’re gone now:</i>', ''];
+    for (const f of archived.slice(0, 8)) a.push(`• ${escapeHtml(f.title)}`);
+    sections.push(a.join('\n'));
+  }
+
+  // ── 4. Other traces: phone, registry, emails, personal sites ─────────────
+  const other: string[] = [];
+  for (const f of all.filter((f) => ['phone', 'registry', 'ofac'].includes(f.source))) {
+    other.push(`• ${escapeHtml(f.title)}`);
+    if (f.detail) other.push(`  <i>${escapeHtml(f.detail.split('\n')[0] ?? '')}</i>`);
+  }
+  const emails = graph.nodes.filter((n) => n.depth > 0 && n.kind === 'email');
+  const domains = graph.nodes.filter((n) => n.depth > 0 && n.kind === 'domain');
+  for (const e of emails) other.push(`• 📧 Email linked to him: ${escapeHtml(e.value)}`);
+  for (const d of domains) other.push(`• 🌐 Website linked to him: ${escapeHtml(d.value)}`);
+  if (other.length) sections.push(['🔗 <b>Other traces</b>', '', ...other].join('\n'));
+
+  // ── 5. The plain-English AI read ─────────────────────────────────────────
+  if (dossier.narrative) {
+    sections.push(`🧠 <b>My read</b>\n\n${escapeHtml(dossier.narrative)}`);
+  }
+
+  // ── 6. Footer ────────────────────────────────────────────────────────────
+  sections.push(`🔔 Want me to keep an eye on him? Send  <code>/watch ${escapeHtml(seed.raw)}</code>`);
+
+  return chunk(sections);
+}
+
 /**
  * Render the full dossier: deterministic signals first (they are the safety
  * payload and must never be buried), then the AI narrative, clearly labelled as

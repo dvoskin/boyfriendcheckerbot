@@ -10,7 +10,7 @@ import { reverseImageSearch } from './media/reverse.js';
 import { writeDossier } from './core/dossier.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
-import { escapeHtml, renderDossier, renderFindings, renderGraph, renderProgress, synthesize } from './report.js';
+import { escapeHtml, renderFindings, renderGraph, renderProgress, renderReport, synthesize } from './report.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
 
@@ -227,15 +227,9 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
         { parse_mode: 'HTML' },
       );
     } else {
-      for (const chunk of renderDossier(seed, dossier)) {
+      for (const chunk of renderReport(seed, graph, dossier)) {
         await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
       }
-      for (const chunk of renderGraph(graph)) {
-        await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
-      }
-      await ctx.reply('🔔 Want me to keep an eye on him? Send  <code>/watch ' + escapeHtml(seed.raw) + '</code>', {
-        parse_mode: 'HTML',
-      });
     }
 
     await audit({
