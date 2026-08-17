@@ -71,14 +71,20 @@ export const blueskySource: Source = {
       }
     }
 
-    // Fuzzy actor search catches display-name matches the exact lookup misses.
+    // Fuzzy actor search catches display-name matches the exact lookup misses —
+    // but Bluesky returns anyone sharing ONE name word (a "George" search returns
+    // George Takei, George Conway…). Require EVERY real name part to appear, so a
+    // random famous namesake never lands in the report.
     if (findings.length === 0) {
       try {
         const res = await httpJson<SearchResponse>(
-          `${APPVIEW}/app.bsky.actor.searchActors?q=${encodeURIComponent(term)}&limit=5`,
+          `${APPVIEW}/app.bsky.actor.searchActors?q=${encodeURIComponent(term)}&limit=8`,
           { timeoutMs: 5000 },
         );
+        const tokens = term.toLowerCase().split(/\s+/).filter((t) => t.length > 1);
         for (const actor of res.actors ?? []) {
+          const hay = `${actor.displayName ?? ''} ${actor.handle ?? ''}`.toLowerCase();
+          if (tokens.length >= 2 && !tokens.every((t) => hay.includes(t))) continue;
           findings.push(toFinding(actor, ctx.now, 0.45));
         }
       } catch {
