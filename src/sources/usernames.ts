@@ -93,6 +93,34 @@ const SITES: Site[] = [
   { name: 'Gravatar', url: (u) => `https://gravatar.com/${u}.json`, category: 'other' },
   { name: 'Discogs', url: (u) => `https://www.discogs.com/user/${u}`, category: 'other' },
   { name: 'Chess.com', url: (u) => `https://www.chess.com/member/${u}`, category: 'other' },
+
+  // ── Expansion batch (calibrate.ts verified) ──────────────────────────────
+  // Social & messaging
+  { name: 'VSCO', url: (u) => `https://vsco.co/${u}/gallery`, category: 'social' },
+  { name: 'Ello', url: (u) => `https://ello.co/${u}`, category: 'social' },
+  { name: 'BiggerPockets', url: (u) => `https://www.biggerpockets.com/users/${u}`, category: 'social' },
+  { name: 'Rumble', url: (u) => `https://rumble.com/user/${u}`, category: 'social' },
+  // Dev & professional (real names, employers)
+  { name: 'AngelList', url: (u) => `https://angel.co/u/${u}`, category: 'dev' },
+  { name: 'Stack Overflow', url: (u) => `https://stackoverflow.com/users/${u}`, category: 'dev' },
+  { name: 'Hashnode', url: (u) => `https://hashnode.com/@${u}`, absent: ['User not found'], category: 'dev' },
+  { name: 'Wellfound', url: (u) => `https://wellfound.com/u/${u}`, category: 'dev' },
+  // Creator / hobby (personality signal)
+  { name: 'Steam', url: (u) => `https://steamcommunity.com/id/${u}`, absent: ['could not be found', 'Steam Community :: Error'], category: 'creator' },
+  { name: 'Goodreads', url: (u) => `https://www.goodreads.com/${u}`, category: 'creator' },
+  { name: 'Untappd', url: (u) => `https://untappd.com/user/${u}`, category: 'creator' },
+  { name: 'Strava', url: (u) => `https://www.strava.com/athletes/${u}`, category: 'creator' },
+  { name: 'AllTrails', url: (u) => `https://www.alltrails.com/members/${u}`, category: 'creator' },
+  { name: 'Wattpad', url: (u) => `https://www.wattpad.com/user/${u}`, category: 'creator' },
+  { name: 'DeviantArt', url: (u) => `https://www.deviantart.com/${u}`, category: 'creator' },
+  { name: 'Giphy', url: (u) => `https://giphy.com/${u}`, category: 'creator' },
+  { name: 'ProductHunt', url: (u) => `https://www.producthunt.com/@${u}`, category: 'creator' },
+  // Commerce / payment / booking (ties pseudonym to real activity)
+  { name: 'Depop', url: (u) => `https://www.depop.com/${u}/`, category: 'commerce' },
+  { name: 'Poshmark', url: (u) => `https://poshmark.com/closet/${u}`, category: 'commerce' },
+  { name: 'Cameo', url: (u) => `https://www.cameo.com/${u}`, category: 'commerce' },
+  { name: 'Throne', url: (u) => `https://throne.com/${u}`, category: 'commerce' },
+  { name: 'Wishlistr', url: (u) => `https://www.wishlistr.com/${u}`, category: 'other' },
 ];
 
 /** Exposed so scripts/calibrate.ts can audit the table for soft-404 sites. */

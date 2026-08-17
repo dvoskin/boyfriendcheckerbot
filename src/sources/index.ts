@@ -1,9 +1,11 @@
 import type { Source } from '../core/types.js';
+import { adverseSource } from './adverse.js';
 import { blueskySource } from './bluesky.js';
 import { courtListenerSource } from './courtlistener.js';
 import { crtshSource } from './crtsh.js';
 import { enformionSource } from './enformion.js';
 import { fecSource } from './fec.js';
+import { finraSource } from './finra.js';
 import { githubSource } from './github.js';
 import { openCorporatesSource } from './opencorporates.js';
 import { nppesSource } from './nppes.js';
@@ -38,4 +40,6 @@ export const ALL_SOURCES: Source[] = [
   enformionSource,
   fecSource,
   openCorporatesSource,
+  adverseSource,
+  finraSource,
 ];

@@ -159,8 +159,10 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   // Kept separate from everything else because it is the highest-stakes result
   // and must never be diluted or misread. The registry source already filters to
   // real name matches, so anything here actually names him.
-  const safety = all.filter((f) => ['registry', 'ofac'].includes(f.source));
+  const safety = all.filter((f) => ['registry', 'ofac', 'adverse'].includes(f.source));
   if (safety.length) {
+    // Worst news first: adverse-media hits and sanctions before all-clear lines.
+    safety.sort((a, b) => b.confidence - a.confidence);
     const s = ['🛡️ <b>Safety check</b>', ''];
     for (const f of safety) {
       s.push(f.url ? `• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>` : `• ${escapeHtml(f.title)}`);
@@ -240,7 +242,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   // ── 4. Public records & web mentions (the meat of a name search) ─────────
   const recSeen = new Set<string>();
   const records = all.filter((f) => {
-    if (!['nppes', 'sec', 'courtlistener', 'search', 'fec', 'opencorporates'].includes(f.source)) return false;
+    if (!['nppes', 'sec', 'courtlistener', 'search', 'fec', 'opencorporates', 'finra'].includes(f.source)) return false;
     const key = f.url ?? f.title;
     if (recSeen.has(key)) return false;
     recSeen.add(key);
