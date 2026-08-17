@@ -10,7 +10,7 @@ import { reverseImageSearch } from './media/reverse.js';
 import { writeDossier } from './core/dossier.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
-import { escapeHtml, renderFindings, renderGraph, renderProgress, renderReport, synthesize } from './report.js';
+import { escapeHtml, renderFindings, renderGraph, renderImageReport, renderProgress, renderReport, synthesize } from './report.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
 
@@ -441,17 +441,9 @@ async function main(): Promise<void> {
         reverseImageSearch(buf, now).catch(() => null),
       ]);
       const findings = [...(reverse ?? []), ...provenance];
-      const subject: Subject = { raw: file.file_unique_id, kind: 'image', value: file.file_unique_id };
-      const result: SourceResult = {
-        source: 'image',
-        label: 'Photo check',
-        ok: true,
-        findings,
-        ms: 0,
-      };
 
       await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
-      for (const chunk of renderFindings(subject, [result])) {
+      for (const chunk of renderImageReport(findings)) {
         await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
       }
 

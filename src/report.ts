@@ -262,6 +262,64 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
 }
 
 /**
+ * Clean, girly render for a photo check. Leads with the two things that actually
+ * matter to a non-technical reader — is it a fake/AI image, and does the face
+ * turn up elsewhere — and drops the raw SHA/dimensions dump into a small footer.
+ */
+export function renderImageReport(findings: Finding[]): string[] {
+  const by = (labels: string[]) => findings.filter((f) => labels.includes(f.label));
+  const lines: string[] = ['📸 <b>Photo check</b>', ''];
+
+  const ai = by(['Synthetic media']);
+  const c2pa = by(['C2PA']);
+  const gps = by(['GPS']);
+  const reverse = findings.filter((f) => f.source === 'reverse');
+  const exif = by(['EXIF']);
+
+  // Headline verdict.
+  if (ai.length) {
+    lines.push('🔴 <b>This image looks AI-generated or edited.</b>', '<i>Metadata names an AI tool — be very skeptical of these photos.</i>', '');
+  } else {
+    lines.push('🟢 No obvious sign the image itself is faked.', '');
+  }
+
+  if (reverse.length) {
+    lines.push('🔎 <b>Where this face shows up</b>');
+    for (const f of reverse) {
+      if (f.url) lines.push(`• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>`);
+      else {
+        lines.push(escapeHtml(f.title));
+        if (f.detail) lines.push(`<i>${escapeHtml(f.detail)}</i>`);
+      }
+    }
+    lines.push('');
+  }
+
+  if (gps.length) {
+    const g = gps[0]!;
+    lines.push(`📍 <b>Location baked into the photo:</b> ${escapeHtml(g.title.replace(/^Geotagged:\s*/, ''))}`);
+    if (g.url) lines.push(`<a href="${escapeHtml(g.url)}">Open in Maps</a>`);
+    lines.push('');
+  }
+
+  if (c2pa.length) lines.push('🏷️ Has Content Credentials (C2PA) — check contentcredentials.org/verify.', '');
+
+  // Small, non-scary technical footer.
+  const foot: string[] = [];
+  if (exif.length && exif[0]!.detail) {
+    const cam = exif[0]!.detail!.split('\n').find((l) => /^Camera:|^Software:/.test(l));
+    if (cam) foot.push(`<i>${escapeHtml(cam)}</i>`);
+  } else if (!ai.length) {
+    foot.push('<i>No camera metadata (normal for anything downloaded from social media).</i>');
+  }
+  if (foot.length) lines.push(...foot);
+
+  lines.push('', '<i>💡 The real test: do these match the photos of whoever you’ve been talking to?</i>');
+
+  return chunk([lines.join('\n')]);
+}
+
+/**
  * Render the full dossier: deterministic signals first (they are the safety
  * payload and must never be buried), then the AI narrative, clearly labelled as
  * interpretation so the reader keeps facts and analysis separate.

@@ -98,48 +98,39 @@ export async function reverseImageSearch(buf: Buffer, now: string): Promise<Find
       {
         source: 'reverse',
         label: 'Reverse image',
-        title: '✅ No copies of this photo found elsewhere',
+        title: '✅ Didn’t find this photo posted elsewhere',
         detail:
-          'The image did not turn up on other sites. That is mildly reassuring for a catfish check, though not proof — a fresh photo will not match anything either.',
+          'Good sign for a catfish check — though not proof, since a brand-new photo also matches nothing.',
         retrievedAt: now,
         confidence: 0.6,
       },
     ];
   }
 
-  const findings: Finding[] = [];
+  // IMPORTANT framing: Google Lens returns *visually similar* images, not only
+  // exact copies. So a list of look-alikes is a LEAD to eyeball, never a verdict.
+  // The old "stock/model site = not him" call was wrong and is removed — a
+  // similar-looking stranger's photo is not evidence his picture was stolen.
+  const findings: Finding[] = [
+    {
+      source: 'reverse',
+      label: 'Reverse image',
+      title: `🔎 Found ${matches.length} similar-looking image(s) online`,
+      detail:
+        'These look SIMILAR to his photo — not necessarily the same picture. Scan the names below: if his exact photo shows up under a DIFFERENT person’s name, that’s a catfish red flag. Look-alikes alone mean nothing.',
+      retrievedAt: now,
+      confidence: 0.45,
+    },
+  ];
 
-  // Distinct source domains carrying the same image. Many unrelated sources —
-  // especially stock/model/dating sites — is the classic stolen-photo pattern.
-  const sources = new Set(matches.map((m) => m.source).filter(Boolean));
-  const stockish = matches.filter((m) => /shutterstock|istock|getty|dreamstime|adobe stock|123rf|pexels|unsplash|model|escort/i.test(`${m.source} ${m.title}`));
-
-  const headline =
-    stockish.length > 0
-      ? '🔴 This photo appears on stock/model sites — likely NOT him'
-      : sources.size >= 4
-        ? `🟡 This photo appears on ${sources.size} different sites — worth a closer look`
-        : `🔵 This photo appears on ${matches.length} other page(s)`;
-
-  findings.push({
-    source: 'reverse',
-    label: 'Reverse image',
-    title: headline,
-    detail: stockish.length
-      ? 'A stock-photo or model-site match usually means the picture was lifted, not taken by him.'
-      : 'Review the pages below — do the names and context match who he says he is?',
-    retrievedAt: now,
-    confidence: stockish.length ? 0.75 : 0.55,
-  });
-
-  for (const m of matches.slice(0, 8)) {
+  for (const m of matches.slice(0, 6)) {
     findings.push({
       source: 'reverse',
       label: m.source ?? 'Match',
       title: (m.title ?? m.link ?? '').slice(0, 120),
       url: m.link,
       retrievedAt: now,
-      confidence: 0.4,
+      confidence: 0.35,
     });
   }
 
