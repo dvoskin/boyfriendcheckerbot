@@ -25,6 +25,9 @@ export const config = {
   courtListenerToken: opt('COURTLISTENER_TOKEN'),
   twilioSid: opt('TWILIO_ACCOUNT_SID'),
   twilioToken: opt('TWILIO_AUTH_TOKEN'),
+  // Enformion / EnformionGO (formerly Endato) people-data aggregator.
+  enformionName: opt('ENFORMION_AP_NAME'),
+  enformionPassword: opt('ENFORMION_AP_PASSWORD'),
   dataDir: process.env.DATA_DIR ?? './data',
   // How often the watch loop re-checks each watched person, in minutes.
   watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),

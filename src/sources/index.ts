@@ -2,6 +2,7 @@ import type { Source } from '../core/types.js';
 import { blueskySource } from './bluesky.js';
 import { courtListenerSource } from './courtlistener.js';
 import { crtshSource } from './crtsh.js';
+import { enformionSource } from './enformion.js';
 import { githubSource } from './github.js';
 import { nppesSource } from './nppes.js';
 import { ofacSource } from './ofac.js';
@@ -32,4 +33,5 @@ export const ALL_SOURCES: Source[] = [
   courtListenerSource,
   phoneSource,
   registrySource,
+  enformionSource,
 ];

@@ -170,6 +170,21 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     sections.push(s.join('\n'));
   }
 
+  // ── 2.5 Deep background (aggregator): relatives, marriage, records ───────
+  // Placed right after safety because it is the richest, most decision-relevant
+  // data — the "is he married / who's his family / any records" answers.
+  const deep = all.filter((f) => f.source === 'enformion');
+  if (deep.length) {
+    const d = ['🔬 <b>Deep background</b>', ''];
+    for (const f of deep) {
+      d.push(`<b>${escapeHtml(f.title)}</b>`);
+      if (f.detail) for (const line of f.detail.split('\n')) d.push(escapeHtml(line));
+      d.push('');
+    }
+    d.push('<i>💡 Public-records data — powerful but not perfect. Double-check it’s the right person (age + city).</i>');
+    sections.push(d.join('\n'));
+  }
+
   // ── 3. Accounts, split into "very likely him" vs "same handle, verify" ───
   const acctText = (f: (typeof all)[number]): string =>
     f.source === 'usernames' ? f.label : `${f.label} ${f.title}`;
@@ -248,8 +263,14 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
 
   // ── 8. "Want deeper?" — nudge for the selectors we don't have yet ────────
   const nudges: string[] = [];
-  const haveEmail = seed.kind === 'email' || graph.nodes.some((n) => n.kind === 'email');
-  const havePhone = seed.kind === 'phone' || all.some((f) => f.source === 'phone');
+  const haveEmail =
+    seed.kind === 'email' ||
+    graph.nodes.some((n) => n.kind === 'email') ||
+    all.some((f) => f.source === 'enformion' && f.label === 'Emails');
+  const havePhone =
+    seed.kind === 'phone' ||
+    all.some((f) => f.source === 'phone') ||
+    all.some((f) => f.source === 'enformion' && f.label === 'Phones');
   if (!haveEmail) nudges.push('📧 his <b>email</b> — finds more accounts + breach checks');
   if (!havePhone) nudges.push('📱 his <b>phone</b> — tells you the real registered name');
   nudges.push('📸 his <b>photo</b> (as a File) — catches catfish + stolen pics');
