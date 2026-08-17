@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Bot, type Context } from 'grammy';
+import { Bot, type Context, InlineKeyboard } from 'grammy';
 import { audit } from './core/audit.js';
 import { config, requireBotToken } from './core/config.js';
 import { runSources } from './core/runner.js';
@@ -18,6 +18,38 @@ import { warmOfac } from './sources/ofac.js';
 
 /** Users mid-disambiguation: they were shown a numbered list and owe us a pick. */
 const pendingPick = new Map<number, { candidates: Candidate[]; raw: string }>();
+
+/** Users who tapped a menu button: their next message is this exact kind. */
+const pendingInput = new Map<number, SubjectKind>();
+
+/** The tap-to-choose input menu — removes the guesswork of free-text parsing. */
+const mainMenu = new InlineKeyboard()
+  .text('🧑 Name', 'ask:person')
+  .text('💬 Username', 'ask:username')
+  .row()
+  .text('📧 Email', 'ask:email')
+  .text('📱 Phone', 'ask:phone')
+  .row()
+  .text('📸 Photo', 'ask:image');
+
+const ASK_PROMPT: Record<string, string> = {
+  person: 'Send me their <b>full name</b> 🧑\n<i>Tip: add a city for a sharper match — <code>John Smith | Miami</code></i>',
+  username: 'Send me their <b>@username</b> 💬  (Instagram, TikTok, etc.)',
+  email: 'Send me their <b>email</b> 📧',
+  phone: 'Send me their <b>phone number</b> 📱',
+  image: 'Send me their <b>photo as a File 📎</b> (not compressed, so the hidden data survives).',
+};
+
+/** Force a specific kind (from a button) rather than guessing from the text. */
+function seedForKind(kind: SubjectKind, text: string): Subject {
+  const [value, hints] = text.split('|').map((s) => s.trim());
+  const v = value ?? text;
+  if (kind === 'phone') {
+    const digits = v.replace(/[^\d+]/g, '');
+    return { raw: v, kind: 'phone', value: digits };
+  }
+  return { raw: v, kind, value: v.replace(/^@/, ''), hints };
+}
 
 const CONSENT_FILE = () => join(config.dataDir, 'consent.json');
 const consented = new Set<number>();
@@ -276,10 +308,29 @@ async function main(): Promise<void> {
   void warmOfac();
   const bot = new Bot(requireBotToken());
 
+  const withMenu = { parse_mode: 'HTML', reply_markup: mainMenu } as const;
+
   bot.command('start', (ctx) =>
-    ctx.reply(consented.has(ctx.from?.id ?? 0) ? HELP : TERMS, { parse_mode: 'HTML' }),
+    consented.has(ctx.from?.id ?? 0)
+      ? ctx.reply(HELP, withMenu)
+      : ctx.reply(TERMS, { parse_mode: 'HTML' }),
   );
-  bot.command('help', (ctx) => ctx.reply(HELP, { parse_mode: 'HTML' }));
+  bot.command('help', (ctx) => ctx.reply(HELP, withMenu));
+  bot.command('check', (ctx) => (guard(ctx) ? ctx.reply('Who are we checking? Pick one 👇', withMenu) : undefined));
+
+  // Menu button tapped → prompt for that exact input type, no guessing.
+  bot.callbackQuery(/^ask:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const kind = ctx.match![1] as SubjectKind;
+    const uid = ctx.from.id;
+    if (kind === 'image') {
+      pendingInput.delete(uid);
+    } else {
+      pendingInput.set(uid, kind);
+    }
+    await ctx.reply(ASK_PROMPT[kind] ?? 'Send it over 👇', { parse_mode: 'HTML' });
+  });
 
   bot.command('budget', async (ctx) => {
     if (!guard(ctx)) return;
@@ -297,7 +348,7 @@ async function main(): Promise<void> {
     if (!id) return;
     consented.add(id);
     await saveConsent();
-    await ctx.reply(HELP, { parse_mode: 'HTML' });
+    await ctx.reply(HELP, withMenu);
   });
 
   const explicit: Record<string, SubjectKind> = {
@@ -313,7 +364,7 @@ async function main(): Promise<void> {
     if (!guard(ctx)) return;
     const arg = ctx.match?.toString().trim();
     if (!arg || PLACEHOLDER_VALUES.has(arg.toLowerCase().replace(/^@/, ''))) {
-      await ctx.reply(NUDGE, { parse_mode: 'HTML' });
+      await ctx.reply(NUDGE, withMenu);
       return;
     }
     await runTrace(ctx, detectSubject(arg));
@@ -523,9 +574,18 @@ async function main(): Promise<void> {
       return;
     }
 
+    // If they tapped a menu button, treat this message as that exact kind — no
+    // guessing. This is what stops "phone 177… and 131…" being read as a name.
+    const forced = pendingInput.get(uid);
+    if (forced) {
+      pendingInput.delete(uid);
+      await runTrace(ctx, seedForKind(forced, text));
+      return;
+    }
+
     const seed = detectSubject(text);
     if (PLACEHOLDER_VALUES.has(seed.value.toLowerCase())) {
-      await ctx.reply(NUDGE, { parse_mode: 'HTML' });
+      await ctx.reply(NUDGE, withMenu);
       return;
     }
 
