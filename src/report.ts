@@ -162,7 +162,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   if (anyF((f) => f.source === 'adverse' && /🚨/.test(f.title))) score -= 30;
   if (anyF((f) => f.source === 'scam' && /🚨/.test(f.title))) score -= 30;
   if (anyF((f) => f.source === 'unicourt' && /🔴/.test(f.title))) score -= 25;
-  if (anyF((f) => f.source === 'enformion' && /Criminal record/i.test(f.detail ?? ''))) score -= 25;
+  if (anyF((f) => f.source === 'enformion' && f.label === 'Criminal record')) score -= 25;
   if (anyF((f) => f.label === 'Synthetic media')) score -= 20;
   if (anyF((f) => f.source === 'hibp' && /DATING|ADULT/i.test(f.title))) score -= 15;
   if (anyF((f) => f.source === 'finra' && /🔴/.test(f.title))) score -= 10;
@@ -203,7 +203,9 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   if (dossier.narrative) sections.push(`💭 <b>My honest read</b>\n\n${escapeHtml(dossier.narrative)}`);
 
   // ── 3. Is he safe? — highest-stakes, never diluted ───────────────────────
-  const safety = all.filter((f) => ['registry', 'ofac', 'adverse', 'scam', 'unicourt'].includes(f.source));
+  const safety = all.filter(
+    (f) => ['registry', 'ofac', 'adverse', 'scam', 'unicourt'].includes(f.source) || (f.source === 'enformion' && f.label === 'Criminal record'),
+  );
   if (safety.length) {
     safety.sort((a, b) => b.confidence - a.confidence);
     const s = ['🛡️ <b>Is he safe?</b>', ''];
@@ -216,7 +218,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   }
 
   // ── 3.5 The real him — the richest personal data, kept high ──────────────
-  const deep = all.filter((f) => f.source === 'enformion');
+  const deep = all.filter((f) => f.source === 'enformion' && f.label !== 'Criminal record');
   if (deep.length) {
     const d = ['💜 <b>The real him</b>', ''];
     for (const f of deep) {

@@ -348,19 +348,36 @@ export const enformionSource: Source = {
       });
     }
 
+    // Criminal + court indicators are SAFETY signals — surface them separately so
+    // the report routes them into "Is he safe?", not buried in background.
+    const criminal: string[] = [];
+    if (indHas('criminal', 'criminalRecords')) criminal.push('⚠️ Criminal record on file');
+    if (indHas('judgments', 'judgment')) criminal.push('Civil judgment(s) against him');
+    if (indHas('sexualOffenses', 'sexOffender', 'sexOffenses')) criminal.push('🔴 Sex-offense record indicator');
+    if (criminal.length) {
+      findings.push({
+        source: 'enformion',
+        label: 'Criminal record',
+        title: criminal[0]!.startsWith('🔴') || criminal[0]!.startsWith('⚠️') ? `🔴 ${criminal[0]!.replace(/^[🔴⚠️]\s*/, '')}` : `🔴 ${criminal[0]}`,
+        detail: [...criminal.slice(1), 'Public-records indicator — pull the actual case to confirm (some are sealed). Verify it’s him.'].filter(Boolean).join('\n'),
+        retrievedAt: ctx.now,
+        confidence: 0.55,
+      });
+    }
+
+    // Money/assets stay in the background section.
     const legal: string[] = [];
     if (indHas('liens', 'lien', 'taxLiens')) legal.push('Tax lien(s) on file');
-    if (indHas('judgments', 'judgment')) legal.push('Civil judgment(s) on file');
     if (indHas('bankruptcy', 'bankruptcies')) legal.push('Bankruptcy record(s)');
-    if (indHas('criminal', 'criminalRecords')) legal.push('⚠️ Criminal record indicator');
-    if (indHas('properties', 'property')) legal.push('Property record(s)');
+    if (indHas('properties', 'property')) legal.push('Owns property (records on file)');
     if (indHas('vehicles', 'vehicle', 'vehicleRegistrations')) legal.push('Vehicle registration(s)');
+    if (indHas('business', 'businesses')) legal.push('Business ownership on file');
     if (legal.length) {
       findings.push({
         source: 'enformion',
-        label: 'Financial & legal',
-        title: '📋 Financial / legal records',
-        detail: [...legal, 'Indicators only — pull the actual record to see details (some are sealed).'].join('\n'),
+        label: 'Money & assets',
+        title: '💰 Money &amp; assets',
+        detail: [...legal, 'Indicators only — confirm before believing.'].join('\n'),
         retrievedAt: ctx.now,
         confidence: 0.55,
       });
