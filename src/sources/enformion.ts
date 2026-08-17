@@ -1,6 +1,6 @@
 import { tryCharge } from '../core/budget.js';
 import { config } from '../core/config.js';
-import { firstNameMatches } from '../core/names.js';
+import { firstNameMatches, stateFromHint } from '../core/names.js';
 import type { Finding, Source, Subject } from '../core/types.js';
 
 /**
@@ -148,7 +148,7 @@ export const enformionSource: Source = {
       ];
     }
 
-    const stateHint = /\b([A-Z]{2})\b/.exec((ctx.hints ?? '').toUpperCase())?.[1];
+    const stateHint = stateFromHint(ctx.hints);
 
     const body: Obj = {
       FirstName: np.first,

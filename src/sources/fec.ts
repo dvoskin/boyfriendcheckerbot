@@ -1,5 +1,6 @@
 import { config } from '../core/config.js';
 import { httpJson } from '../core/http.js';
+import { stateFromHint } from '../core/names.js';
 import type { Finding, Source } from '../core/types.js';
 
 /**
@@ -48,7 +49,7 @@ export const fecSource: Source = {
       sort: '-contribution_receipt_date',
     });
     // A state hint sharply cuts wrong-person matches on common names.
-    const state = /\b([A-Z]{2})\b/.exec((ctx.hints ?? '').toUpperCase())?.[1];
+    const state = stateFromHint(ctx.hints);
     if (state) params.append('contributor_state', state);
 
     const data = await httpJson<FecResponse>(`${API}?${params}`, { timeoutMs: 10_000, cacheTtl: 86_400 });

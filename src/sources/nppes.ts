@@ -1,4 +1,5 @@
 import { httpJson } from '../core/http.js';
+import { stateFromHint } from '../core/names.js';
 import type { Finding, Source } from '../core/types.js';
 
 /**
@@ -67,13 +68,6 @@ function fmtAddress(a: Address): string {
     .join(', ');
 }
 
-/** Two-letter state code out of a free-text hint like "Miami FL" or "Florida". */
-function stateFromHint(hint?: string): string | undefined {
-  if (!hint) return undefined;
-  const direct = /\b([A-Z]{2})\b/.exec(hint.toUpperCase());
-  if (direct?.[1]) return direct[1];
-  return undefined;
-}
 
 export const nppesSource: Source = {
   id: 'nppes',

@@ -105,7 +105,7 @@ export const searchSource: Source = {
         // A result that IS a social profile URL is high-signal even from a plain
         // query — and we want the graph to pivot on it (extract the handle and
         // enumerate his other accounts), which needs it above the pivot bar.
-        const isSocial = /(?:instagram|facebook|tiktok|twitter|x|linkedin|threads|pinterest)\.com\//i.test(hit.url);
+        const isSocial = /(?<!\w)(?:instagram|facebook|tiktok|twitter|x|linkedin|threads|pinterest)\.com\//i.test(hit.url);
         findings.push({
           source: 'search',
           label: isSocial ? 'Social profile' : isSiteScoped ? 'Platform profile' : 'Web',

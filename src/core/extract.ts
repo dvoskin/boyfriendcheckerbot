@@ -172,10 +172,11 @@ const HANDLE_RE = /(?:^|[\s(])@([a-z0-9._-]{2,40})\b/gi;
  * we pull "danny_vosk", and the username enumerator then finds his accounts
  * everywhere else. Handles the per-platform path shapes.
  */
+// The (?<!\w) anchors the host so "x.com" doesn't match the tail of "vox.com".
 const SOCIAL_URL_RES: RegExp[] = [
-  /(?:instagram\.com|facebook\.com|twitter\.com|x\.com|github\.com|pinterest\.com)\/([a-z0-9._-]{2,40})(?:[/?#]|$)/gi,
-  /(?:tiktok\.com|threads\.net)\/@([a-z0-9._-]{2,40})(?:[/?#]|$)/gi,
-  /(?:t\.me|telegram\.me)\/([a-z0-9._-]{2,40})(?:[/?#]|$)/gi,
+  /(?<!\w)(?:instagram\.com|facebook\.com|twitter\.com|x\.com|github\.com|pinterest\.com)\/([a-z0-9._-]{2,40})(?:[/?#]|$)/gi,
+  /(?<!\w)(?:tiktok\.com|threads\.net)\/@([a-z0-9._-]{2,40})(?:[/?#]|$)/gi,
+  /(?<!\w)(?:t\.me|telegram\.me)\/([a-z0-9._-]{2,40})(?:[/?#]|$)/gi,
 ];
 
 /** URL path segments that are pages, not usernames — never pivot on these. */
@@ -215,17 +216,15 @@ function registrableHost(raw: string): string | null {
   const labels = host.split('.');
   const lastTwo = labels.slice(-2).join('.');
   const lastThree = labels.slice(-3).join('.');
-  if (PLATFORM_HOSTS.has(lastTwo) || PLATFORM_HOSTS.has(lastThree) || PLATFORM_HOSTS.has(host)) {
-    return null;
-  }
-  if (INFRA_HOSTS.has(lastTwo) || INFRA_HOSTS.has(lastThree) || INFRA_HOSTS.has(host)) {
-    return null;
-  }
-  if (EMAIL_PROVIDERS.has(lastTwo) || EMAIL_PROVIDERS.has(host)) return null;
-  // A bare public suffix ("co.uk") is not a real domain; if the host is exactly
-  // that, there's no registrable name to pivot on.
-  if (PUBLIC_SUFFIXES.has(lastTwo) || PUBLIC_SUFFIXES.has(host)) return null;
-  return lastTwo;
+  // For ccTLDs like janedoe.co.uk, the registrable domain is the last THREE
+  // labels, not two — otherwise every .co.uk / .com.au domain gets dropped.
+  const base = PUBLIC_SUFFIXES.has(lastTwo) && labels.length >= 3 ? lastThree : lastTwo;
+  if (PLATFORM_HOSTS.has(base) || PLATFORM_HOSTS.has(host)) return null;
+  if (INFRA_HOSTS.has(base) || INFRA_HOSTS.has(host)) return null;
+  if (EMAIL_PROVIDERS.has(base) || EMAIL_PROVIDERS.has(host)) return null;
+  // Still a bare public suffix (only two labels, e.g. "co.uk") — no real name.
+  if (PUBLIC_SUFFIXES.has(base)) return null;
+  return base;
 }
 
 /** Pull well-known structured fields out of a finding's `extra` bag. */

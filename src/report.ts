@@ -249,13 +249,13 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   const socialSeen = new Set<string>();
   const socialProfiles = all.filter((f) => {
     if (f.source !== 'search' || !f.url) return false;
-    if (!/(?:instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com\//i.test(f.url)) return false;
+    if (!/(?<!\w)(?:instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com\//i.test(f.url)) return false;
     if (socialSeen.has(f.url)) return false;
     socialSeen.add(f.url);
     return true;
   });
   const platformName = (url: string): string => {
-    const m = /(instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com/i.exec(url);
+    const m = /(?<!\w)(instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com/i.exec(url);
     const p = m?.[1]?.toLowerCase();
     return p === 'x' ? 'X/Twitter' : p ? p[0]!.toUpperCase() + p.slice(1) : 'Profile';
   };

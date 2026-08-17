@@ -1,5 +1,5 @@
 import { config } from '../core/config.js';
-import { httpJson } from '../core/http.js';
+import { HttpError, httpJson } from '../core/http.js';
 import type { Finding, Source } from '../core/types.js';
 
 const API = 'https://api.github.com';
@@ -66,11 +66,17 @@ export const githubSource: Source = {
     const findings: Finding[] = [];
 
     if (subject.kind === 'username') {
-      const u = await httpJson<User>(
-        `${API}/users/${encodeURIComponent(subject.value.replace(/^@/, ''))}`,
-        { headers: headers(), timeoutMs: 5000 },
-      );
-      findings.push(toFinding(u, ctx.now, 0.9));
+      try {
+        const u = await httpJson<User>(
+          `${API}/users/${encodeURIComponent(subject.value.replace(/^@/, ''))}`,
+          { headers: headers(), timeoutMs: 5000 },
+        );
+        findings.push(toFinding(u, ctx.now, 0.9));
+      } catch (err) {
+        // No GitHub account is a clean "nothing found", not a source failure.
+        if (err instanceof HttpError && err.status === 404) return [];
+        throw err;
+      }
       return findings;
     }
 

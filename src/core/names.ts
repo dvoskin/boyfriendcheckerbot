@@ -69,16 +69,44 @@ const GROUPS: string[][] = [
   ['aleksandr', 'alexander', 'alex', 'sasha'],
 ];
 
-const INDEX = new Map<string, number>();
-GROUPS.forEach((g, i) => g.forEach((n) => INDEX.set(n, i)));
+// A nickname can belong to several groups (e.g. "rick" → Richard AND Patrick,
+// "bert" → Robert AND Albert). Storing only the last group silently broke valid
+// matches, so map each name to EVERY group it appears in and match on overlap.
+const INDEX = new Map<string, number[]>();
+GROUPS.forEach((g, i) =>
+  g.forEach((n) => {
+    const arr = INDEX.get(n) ?? [];
+    arr.push(i);
+    INDEX.set(n, arr);
+  }),
+);
 
 export function firstNameMatches(searched: string, returned: string): boolean {
   const a = searched.trim().toLowerCase();
   const b = returned.trim().toLowerCase();
   if (!a || !b) return true; // no basis to reject
   if (a === b) return true;
-  if (a.startsWith(b) || b.startsWith(a)) return true; // Dan / Daniel
+  // Prefix only when the shorter side is ≥3 chars — otherwise "Al" wrongly
+  // matches Alexandra/Alan/Albert and short names defeat the wrong-person guard.
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (short.length >= 3 && long.startsWith(short)) return true; // Dan / Daniel
   const ga = INDEX.get(a);
   const gb = INDEX.get(b);
-  return ga !== undefined && ga === gb; // Mike / Mikhail
+  return !!ga && !!gb && ga.some((x) => gb.includes(x)); // Mike / Mikhail
+}
+
+/** Valid US state codes, so a stray 2-letter token (e.g. "SF") isn't read as a state. */
+export const US_STATES = new Set([
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
+  'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
+  'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC',
+]);
+
+/** Pull a real US state code out of a free-text hint, or undefined. */
+export function stateFromHint(hint?: string): string | undefined {
+  if (!hint) return undefined;
+  for (const m of hint.toUpperCase().matchAll(/\b([A-Z]{2})\b/g)) {
+    if (US_STATES.has(m[1]!)) return m[1];
+  }
+  return undefined;
 }
