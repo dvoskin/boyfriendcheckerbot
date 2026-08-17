@@ -151,17 +151,18 @@ export const enformionSource: Source = {
     findings.push({
       source: 'enformion',
       label: 'Identity',
-      title: `👤 ${displayName}${age ? `, age ${age}` : ''}`,
+      title: `👤 His real name: ${displayName}${age ? `, age ${age}` : ''}`,
       detail: [
-        where && `Lives around: ${where}`,
-        dob && `DOB on file: ${dob}`,
-        akas.length && `Also known as: ${akas.slice(0, 4).join(', ')}`,
+        where && `Lives in: ${where}`,
+        dob && `Birthday on file: ${dob}`,
+        akas.length && `Also goes by: ${akas.slice(0, 4).join(', ')}`,
         people.length > 1 && `⚠️ ${people.length} people match this name — make sure it’s the right one.`,
       ]
         .filter(Boolean)
         .join('\n'),
       retrievedAt: ctx.now,
       confidence: stateHint ? 0.75 : 0.6,
+      extra: { age, city: where },
     });
 
     // Indicators live under one object of unknown casing; read keys loosely.
@@ -193,6 +194,7 @@ export const enformionSource: Source = {
         .join('\n'),
       retrievedAt: ctx.now,
       confidence: 0.55,
+      extra: { status: divorcedRec ? 'divorced' : marriedRec ? 'married' : 'single' },
     });
 
     if (relatives.length) {
@@ -209,8 +211,8 @@ export const enformionSource: Source = {
         findings.push({
           source: 'enformion',
           label: 'Relatives',
-          title: `👨‍👩‍👧 Relatives & family (${list.length})`,
-          detail: [list.slice(0, 12).join('\n'), 'Relationship labels aren’t always in the data — shared last names usually = immediate family.'].join('\n'),
+          title: `👨‍👩‍👧 His family (${list.length})`,
+          detail: [list.slice(0, 12).join('\n'), 'Same last name usually = parents/siblings. A much younger one could be a kid — worth noticing.'].join('\n'),
           retrievedAt: ctx.now,
           confidence: 0.6,
         });
@@ -222,7 +224,7 @@ export const enformionSource: Source = {
       findings.push({
         source: 'enformion',
         label: 'Associates',
-        title: `🔗 Known associates (${associates.length})`,
+        title: `👯‍♀️ People in his circle (${associates.length})`,
         detail: associates.slice(0, 8).join('\n'),
         retrievedAt: ctx.now,
         confidence: 0.5,
@@ -241,7 +243,7 @@ export const enformionSource: Source = {
       findings.push({
         source: 'enformion',
         label: 'Phones',
-        title: `📱 Phone numbers (${phones.length})`,
+        title: `📱 His phone numbers (${phones.length})`,
         detail: phones.slice(0, 6).join('\n'),
         retrievedAt: ctx.now,
         confidence: 0.6,
@@ -255,7 +257,7 @@ export const enformionSource: Source = {
       findings.push({
         source: 'enformion',
         label: 'Emails',
-        title: `📧 Emails (${emails.length})`,
+        title: `📧 His emails (${emails.length})`,
         detail: emails.slice(0, 6).join('\n'),
         retrievedAt: ctx.now,
         confidence: 0.6,
@@ -269,7 +271,7 @@ export const enformionSource: Source = {
       findings.push({
         source: 'enformion',
         label: 'Addresses',
-        title: `🏠 Addresses on record (${addrList.length})`,
+        title: `🏠 Places he's lived (${addrList.length})`,
         detail: addrList.slice(0, 6).join('\n'),
         retrievedAt: ctx.now,
         confidence: 0.55,

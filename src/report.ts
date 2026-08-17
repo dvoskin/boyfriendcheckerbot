@@ -155,6 +155,33 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   }
   sections.push(head.join('\n'));
 
+  // ── 1.5 "What you really want to know" — the at-a-glance card ─────────────
+  // Translates the raw data into the exact questions she has: how old, where,
+  // single or taken, what he does, any red flags. Only shown when we actually
+  // have some of these answers (i.e. a name search with deep data).
+  const idf = all.find((f) => f.source === 'enformion' && f.label === 'Identity');
+  const relf = all.find((f) => f.source === 'enformion' && f.label === 'Relationship status');
+  const fecf = all.find((f) => f.source === 'fec');
+  const age = idf?.extra?.age as string | undefined;
+  const city = idf?.extra?.city as string | undefined;
+  const relStatus = relf?.extra?.status as string | undefined;
+  const employer = fecf?.extra?.employer as string | undefined;
+  const occupation = fecf?.extra?.occupation as string | undefined;
+  const redFlagCount = dossier.signals.filter((s) => s.level === 'red').length + all.filter((f) => f.source === 'adverse' && /🚨/.test(f.title)).length;
+
+  const card: string[] = [];
+  if (age) card.push(`🎂 <b>Age:</b> ${escapeHtml(age)}`);
+  if (city) card.push(`📍 <b>Lives:</b> ${escapeHtml(city)}`);
+  if (relStatus) {
+    const rel = relStatus === 'married' ? '💍 Married — careful!' : relStatus === 'divorced' ? '💔 Divorced' : '💚 No marriage record (looks single)';
+    card.push(`💘 <b>Relationship:</b> ${rel}`);
+  }
+  if (employer || occupation) card.push(`💼 <b>Works:</b> ${escapeHtml([occupation, employer].filter(Boolean).join(' @ '))}`);
+  if (age || city || relStatus) {
+    card.push(`🚩 <b>Red flags:</b> ${redFlagCount > 0 ? `⚠️ ${redFlagCount} — check below` : 'none so far ✨'}`);
+    sections.push(['💖 <b>What you really want to know</b>', '', ...card].join('\n'));
+  }
+
   // ── 2. Safety check — registry + sanctions, their OWN prominent section ──
   // Kept separate from everything else because it is the highest-stakes result
   // and must never be diluted or misread. The registry source already filters to
@@ -163,7 +190,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   if (safety.length) {
     // Worst news first: adverse-media hits and sanctions before all-clear lines.
     safety.sort((a, b) => b.confidence - a.confidence);
-    const s = ['🛡️ <b>Safety check</b>', ''];
+    const s = ['🛡️ <b>Is he safe?</b>', ''];
     for (const f of safety) {
       s.push(f.url ? `• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>` : `• ${escapeHtml(f.title)}`);
       const first = f.detail?.split('\n')[0];
@@ -177,7 +204,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   // data — the "is he married / who's his family / any records" answers.
   const deep = all.filter((f) => f.source === 'enformion');
   if (deep.length) {
-    const d = ['🔬 <b>Deep background</b>', ''];
+    const d = ['💜 <b>The real him</b>', ''];
     for (const f of deep) {
       d.push(`<b>${escapeHtml(f.title)}</b>`);
       if (f.detail) for (const line of f.detail.split('\n')) d.push(escapeHtml(line));
