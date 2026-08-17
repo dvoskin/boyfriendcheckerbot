@@ -64,11 +64,11 @@ export const criminalSource: Source = {
         {
           source: 'criminal',
           label: 'Arrest records',
-          title: `✅ No published arrest records found for ${name}`,
+          title: `⚠️ Couldn’t confirm criminal records for ${name}`,
           detail:
-            'Nothing surfaced on public arrest/mugshot sites. NOT an official clearance — many records aren’t published online. For the authoritative record, a court-records source is needed.',
+            'This does NOT mean they’re clean. Most criminal records are NOT searchable for free — mugshot/arrest sites have mostly been taken down. A real criminal check needs a court-records source (UniCourt). Treat this as "unchecked", not "clear".',
           retrievedAt: ctx.now,
-          confidence: 0.5,
+          confidence: 0.4,
         },
       ];
     }
