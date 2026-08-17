@@ -114,7 +114,7 @@ export const nppesSource: Source = {
       });
       if (res.results.length === 0) return [];
       // Still ambiguous (common name, no city) → summarise instead of listing strangers.
-      if (res.results.length > 4 && !state && !middle) {
+      if (res.results.length > 4 && !state) {
         return [
           {
             source: 'nppes',

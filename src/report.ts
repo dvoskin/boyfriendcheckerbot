@@ -162,6 +162,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   if (anyF((f) => f.source === 'adverse' && /🚨/.test(f.title))) score -= 30;
   if (anyF((f) => f.source === 'scam' && /🚨/.test(f.title))) score -= 30;
   if (anyF((f) => f.source === 'unicourt' && /🔴/.test(f.title))) score -= 25;
+  if (anyF((f) => f.source === 'criminal' && /🔴/.test(f.title))) score -= 20;
   if (anyF((f) => f.source === 'enformion' && f.label === 'Criminal record')) score -= 25;
   if (anyF((f) => f.label === 'Synthetic media')) score -= 20;
   if (anyF((f) => f.source === 'hibp' && /DATING|ADULT/i.test(f.title))) score -= 15;
@@ -234,7 +235,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
 
   // ── 3. Is he safe? — highest-stakes, never diluted ───────────────────────
   const safety = all.filter(
-    (f) => ['registry', 'ofac', 'adverse', 'scam', 'unicourt'].includes(f.source) || (f.source === 'enformion' && f.label === 'Criminal record'),
+    (f) => ['registry', 'ofac', 'adverse', 'scam', 'unicourt', 'criminal'].includes(f.source) || (f.source === 'enformion' && f.label === 'Criminal record'),
   );
   if (safety.length) {
     safety.sort((a, b) => b.confidence - a.confidence);

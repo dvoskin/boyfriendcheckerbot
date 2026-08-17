@@ -3,6 +3,7 @@ import { academicSource } from './academic.js';
 import { adverseSource } from './adverse.js';
 import { blueskySource } from './bluesky.js';
 import { brightDataSource } from './brightdata.js';
+import { criminalSource } from './criminal.js';
 import { hibpSource } from './hibp.js';
 import { scamSource } from './scam.js';
 import { uniCourtSource } from './unicourt.js';
@@ -56,4 +57,5 @@ export const ALL_SOURCES: Source[] = [
   brightDataSource,
   uniCourtSource,
   gravatarSource,
+  criminalSource,
 ];
