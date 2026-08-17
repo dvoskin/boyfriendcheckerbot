@@ -1,4 +1,5 @@
 import { httpJson } from '../core/http.js';
+import { firstNameMatches } from '../core/names.js';
 import type { Finding, Source } from '../core/types.js';
 
 /**
@@ -57,9 +58,7 @@ export const finraSource: Source = {
 
     const hits = (data.hits?.hits ?? []).filter((h) => {
       const s = h._source;
-      return (
-        (s?.ind_firstname ?? '').toLowerCase().includes(first) && (s?.ind_lastname ?? '').toLowerCase().includes(last)
-      );
+      return firstNameMatches(first, (s?.ind_firstname ?? '').toLowerCase()) && (s?.ind_lastname ?? '').toLowerCase().includes(last);
     });
     if (hits.length === 0) return [];
 

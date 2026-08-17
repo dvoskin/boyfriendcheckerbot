@@ -1,5 +1,5 @@
 import { httpJson } from '../core/http.js';
-import { stateFromHint } from '../core/names.js';
+import { firstNameMatches, stateFromHint } from '../core/names.js';
 import type { Finding, Source } from '../core/types.js';
 
 /**
@@ -76,9 +76,12 @@ export const nppesSource: Source = {
 
   async run(subject, ctx) {
     const params = new URLSearchParams({ version: '2.1', limit: '20' });
+    const parts = subject.value.trim().split(/\s+/);
+    const first = parts[0]!.toLowerCase();
+    const middle = parts.length > 2 ? parts[1]!.toLowerCase() : undefined;
+    const last = parts[parts.length - 1]!.toLowerCase();
 
     if (subject.kind === 'person') {
-      const parts = subject.value.trim().split(/\s+/);
       if (parts.length < 2) return null;
       params.set('first_name', parts[0]!);
       params.set('last_name', parts[parts.length - 1]!);
@@ -98,6 +101,33 @@ export const nppesSource: Source = {
       throw new Error(res.Errors.map((e) => e.description).join('; '));
     }
     if (!res.results?.length) return [];
+
+    // Narrow to the real person: nickname-match the first name, and if a middle
+    // name was given, require it too. This kills the "8 random Ebony Jacksons".
+    if (subject.kind === 'person') {
+      res.results = res.results.filter((r) => {
+        const bf = (r.basic.first_name ?? '').toLowerCase();
+        const bm = (r.basic.middle_name ?? '').toLowerCase();
+        if (!firstNameMatches(first, bf)) return false;
+        if (middle && bm && !bm.startsWith(middle) && !middle.startsWith(bm)) return false;
+        return true;
+      });
+      if (res.results.length === 0) return [];
+      // Still ambiguous (common name, no city) → summarise instead of listing strangers.
+      if (res.results.length > 4 && !state && !middle) {
+        return [
+          {
+            source: 'nppes',
+            label: 'NPPES',
+            title: `${res.results.length}+ healthcare providers named ${subject.raw}`,
+            detail: 'Too many to tell apart — add a city (e.g. "Name | FL") to find the right one.',
+            url: `https://npiregistry.cms.hhs.gov/search?first_name=${encodeURIComponent(first)}&last_name=${encodeURIComponent(last)}`,
+            retrievedAt: ctx.now,
+            confidence: 0.3,
+          },
+        ];
+      }
+    }
 
     return res.results.slice(0, 8).map((r): Finding => {
       const b = r.basic;
