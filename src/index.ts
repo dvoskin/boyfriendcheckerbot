@@ -12,8 +12,12 @@ import { writeDossier } from './core/dossier.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, renderFindings, renderGraph, renderImageReport, renderProgress, renderReport, synthesize } from './report.js';
+import { type Candidate, enformionCandidates } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
+
+/** Users mid-disambiguation: they were shown a numbered list and owe us a pick. */
+const pendingPick = new Map<number, { candidates: Candidate[]; raw: string }>();
 
 const CONSENT_FILE = () => join(config.dataDir, 'consent.json');
 const consented = new Set<number>();
@@ -476,9 +480,28 @@ async function main(): Promise<void> {
   bot.on('message:text', async (ctx) => {
     if (!guard(ctx)) return;
     const text = ctx.message.text.trim();
+    const uid = ctx.from!.id;
 
-    // An unregistered slash command (e.g. "/tracehandle") lands here. Rather than
-    // stay silent — which is what confused early testers — nudge with examples.
+    // If they owe us a disambiguation pick, a bare number selects a candidate.
+    const pending = pendingPick.get(uid);
+    if (pending && /^\d{1,2}$/.test(text)) {
+      const chosen = pending.candidates[Number(text) - 1];
+      pendingPick.delete(uid);
+      if (!chosen) {
+        await ctx.reply('🤔 That number wasn’t on the list — send his name again.');
+        return;
+      }
+      const seed = detectSubject(pending.raw);
+      seed.hints = chosen.state; // pin the search to the person she picked
+      await ctx.reply(
+        `💅 On it — digging into <b>${escapeHtml(chosen.name)}</b>${chosen.city ? ` from ${escapeHtml(chosen.city)}` : ''}…`,
+        { parse_mode: 'HTML' },
+      );
+      await runTrace(ctx, seed);
+      return;
+    }
+
+    // An unregistered slash command (e.g. "/tracehandle") lands here.
     if (text.startsWith('/')) {
       await ctx.reply(
         `🤔 I don’t know that command. Skip the slash — just send his <b>@username</b>, <b>name</b>, <b>email</b>, <b>phone</b>, or a <b>photo</b> 📸`,
@@ -492,7 +515,36 @@ async function main(): Promise<void> {
       await ctx.reply(NUDGE, { parse_mode: 'HTML' });
       return;
     }
-    // Plain text runs the FULL trace — the target audience should never need /trace.
+
+    // Disambiguate a name with no city BEFORE spending a full deep-search credit.
+    // A cheap teaser lists the matches; she picks the right person.
+    if (seed.kind === 'person' && !seed.hints) {
+      const candidates = await enformionCandidates(seed.value).catch(() => null);
+      if (candidates && candidates.length >= 2) {
+        const distinctPlaces = new Set(candidates.map((c) => `${c.city ?? ''}|${c.state ?? ''}`));
+        if (distinctPlaces.size >= 2) {
+          pendingPick.set(uid, { candidates, raw: text });
+          const lines = candidates.map(
+            (c, i) =>
+              `${i + 1}. <b>${escapeHtml(c.name)}</b>${c.age ? `, ${escapeHtml(c.age)}` : ''}${
+                c.city ? ` — ${escapeHtml(c.city)}${c.state ? `, ${escapeHtml(c.state)}` : ''}` : ''
+              }`,
+          );
+          await ctx.reply(
+            [
+              `🔎 I found <b>${candidates.length} people</b> named ${escapeHtml(seed.raw)}. Which one is he? 👇`,
+              '',
+              ...lines,
+              '',
+              `Reply with the <b>number</b> — or send his name + city like <code>${escapeHtml(seed.raw)} | Miami</code> 💅`,
+            ].join('\n'),
+            { parse_mode: 'HTML' },
+          );
+          return;
+        }
+      }
+    }
+
     await runTrace(ctx, seed);
   });
 

@@ -70,6 +70,60 @@ function nameParts(subject: Subject): { first: string; last: string; middle?: st
   return { first: parts[0]!, last: parts[parts.length - 1]!, middle: parts.length > 2 ? parts[1] : undefined };
 }
 
+export interface Candidate {
+  name: string;
+  age?: string;
+  city?: string;
+  state?: string;
+}
+
+/**
+ * Cheap candidate lookup (Teaser search) for disambiguation: given a name with
+ * no city, list the distinct people who match so the user can pick the right one
+ * BEFORE we spend a full deep-search credit on the wrong person.
+ */
+export async function enformionCandidates(fullName: string): Promise<Candidate[] | null> {
+  if (!config.enformionName || !config.enformionPassword) return null;
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'galaxy-ap-name': config.enformionName,
+        'galaxy-ap-password': config.enformionPassword,
+        'galaxy-search-type': 'Teaser',
+      },
+      body: JSON.stringify({ FirstName: parts[0], LastName: parts[parts.length - 1] }),
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Obj;
+    const people = arr(get(data, 'persons', 'Persons', 'records', 'Records', 'results', 'Results'));
+
+    const seen = new Set<string>();
+    const out: Candidate[] = [];
+    for (const p of people) {
+      const a0 = arr(get(p, 'Addresses', 'addresses'))[0];
+      const city = str(get(a0, 'City', 'city'));
+      const state = str(get(a0, 'State', 'state'));
+      const name = nameOf(p);
+      const age = str(get(p, 'Age', 'age'));
+      const key = `${name}|${city}|${state}`.toLowerCase();
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name, age, city, state });
+      if (out.length >= 6) break;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 export const enformionSource: Source = {
   id: 'enformion',
   label: 'Deep background',
