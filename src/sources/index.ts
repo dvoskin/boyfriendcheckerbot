@@ -16,6 +16,7 @@ import { finraSource } from './finra.js';
 import { githubSource } from './github.js';
 import { gravatarSource } from './gravatar.js';
 import { openCorporatesSource } from './opencorporates.js';
+import { piplSource } from './pipl.js';
 import { nppesSource } from './nppes.js';
 import { ofacSource } from './ofac.js';
 import { phoneSource } from './phone.js';
@@ -58,4 +59,5 @@ export const ALL_SOURCES: Source[] = [
   uniCourtSource,
   gravatarSource,
   criminalSource,
+  piplSource,
 ];

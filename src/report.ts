@@ -324,7 +324,11 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   // ── 4. Public records & web mentions (the meat of a name search) ─────────
   const recSeen = new Set<string>();
   const records = all.filter((f) => {
-    if (!['nppes', 'sec', 'courtlistener', 'search', 'fec', 'opencorporates', 'finra', 'wikipedia', 'academic', 'gravatar'].includes(f.source))
+    if (
+      !['nppes', 'sec', 'courtlistener', 'search', 'fec', 'opencorporates', 'finra', 'wikipedia', 'academic', 'gravatar', 'pipl'].includes(
+        f.source,
+      )
+    )
       return false;
     const key = f.url ?? f.title;
     if (recSeen.has(key)) return false;

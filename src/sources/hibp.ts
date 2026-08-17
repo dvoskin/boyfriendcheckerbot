@@ -54,11 +54,43 @@ export const hibpSource: Source = {
     }
 
     const breaches = JSON.parse(body) as Breach[];
-    if (!Array.isArray(breaches) || breaches.length === 0) return [];
+
+    // Pastes: the email appearing in a public paste (Pastebin etc.) — often a
+    // dump of usernames/passwords, a stronger "this got leaked" signal. Same key.
+    const findings: Finding[] = [];
+    try {
+      const paste = await httpGet(`https://haveibeenpwned.com/api/v3/pasteaccount/${encodeURIComponent(subject.value)}`, {
+        timeoutMs: 8000,
+        cacheTtl: 86_400,
+        headers: { 'hibp-api-key': config.hibpKey, 'user-agent': 'recon-bot' },
+        allowStatus: [404],
+      });
+      if (paste.status === 200) {
+        const pastes = JSON.parse(paste.body) as { Source?: string; Title?: string; Date?: string }[];
+        if (Array.isArray(pastes) && pastes.length > 0) {
+          findings.push({
+            source: 'hibp',
+            label: 'Pastes',
+            title: `📄 Email found in ${pastes.length} public paste(s)`,
+            detail: pastes
+              .slice(0, 4)
+              .map((p) => `${p.Source ?? 'Paste'}${p.Date ? ` (${p.Date.slice(0, 10)})` : ''}`)
+              .join('\n'),
+            retrievedAt: ctx.now,
+            confidence: 0.5,
+          });
+        }
+      }
+    } catch {
+      // Pastes are a bonus; a failure here shouldn't sink the breach result.
+    }
+
+    if ((!Array.isArray(breaches) || breaches.length === 0) && findings.length === 0) return [];
+    if (!Array.isArray(breaches) || breaches.length === 0) return findings;
 
     const dating = breaches.filter((b) => DATING_HINT.test(`${b.Name} ${b.Domain} ${b.Title}`));
     const dates = breaches.map((b) => b.BreachDate).filter(Boolean).sort();
-    const findings: Finding[] = [
+    findings.unshift(
       {
         source: 'hibp',
         label: 'Email breaches',
@@ -72,7 +104,7 @@ export const hibpSource: Source = {
         retrievedAt: ctx.now,
         confidence: 0.6,
       },
-    ];
+    );
 
     for (const b of breaches.slice(0, 10)) {
       findings.push({

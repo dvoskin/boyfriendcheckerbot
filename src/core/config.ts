@@ -40,6 +40,10 @@ export const config = {
   // OAuth2 client credentials.
   uniCourtClientId: opt('UNICOURT_CLIENT_ID'),
   uniCourtClientSecret: opt('UNICOURT_CLIENT_SECRET'),
+  // TinEye — true exact-match reverse image (better than look-alikes).
+  tineyeKey: opt('TINEYE_API_KEY'),
+  // Pipl — deep identity resolution (email/name → social, phones, jobs).
+  piplKey: opt('PIPL_API_KEY'),
   dataDir: process.env.DATA_DIR ?? './data',
   // How often the watch loop re-checks each watched person, in minutes.
   watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),
