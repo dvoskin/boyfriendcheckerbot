@@ -1,0 +1,32 @@
+# Render blueprint. This bot uses Telegram long-polling, so it is a *worker*
+# (no inbound HTTP, no port, no public URL) — not a web service. Note Render
+# background workers are a paid plan; a free web service would spin down on idle
+# and kill the poller, so this is intentionally a worker.
+services:
+  - type: worker
+    name: recon-bot
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    # Persist the audit log and consent list across deploys. Without a disk the
+    # data/ directory is wiped on every redeploy.
+    disk:
+      name: recon-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: CONTACT_EMAIL
+        value: danny@goalsplasticsurgery.com
+      # Secrets are set in the Render dashboard, not committed here.
+      - key: BOT_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: BRAVE_API_KEY
+        sync: false
+      - key: ALLOWED_USER_IDS
+        sync: false
