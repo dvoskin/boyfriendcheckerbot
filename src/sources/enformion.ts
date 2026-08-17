@@ -210,6 +210,7 @@ export const enformionSource: Source = {
     });
 
     if (relatives.length) {
+      const relSeen = new Set<string>();
       const list = relatives
         .map((r) => {
           const nm = nameOf(r);
@@ -218,7 +219,7 @@ export const enformionSource: Source = {
           const tag = [rel, age && `age ${age}`].filter(Boolean).join(', ');
           return nm ? `${nm}${tag ? ` — ${tag}` : ''}` : '';
         })
-        .filter(Boolean);
+        .filter((s) => s && !relSeen.has(s.toLowerCase()) && relSeen.add(s.toLowerCase()));
       if (list.length) {
         findings.push({
           source: 'enformion',
@@ -231,7 +232,10 @@ export const enformionSource: Source = {
       }
     }
 
-    const associates = arr(get(p, 'AssociatesSummary', 'associatesSummary', 'Associates', 'associates')).map(nameOf).filter(Boolean);
+    const assocSeen = new Set<string>();
+    const associates = arr(get(p, 'AssociatesSummary', 'associatesSummary', 'Associates', 'associates'))
+      .map(nameOf)
+      .filter((s) => s && !assocSeen.has(s.toLowerCase()) && assocSeen.add(s.toLowerCase()));
     if (associates.length) {
       findings.push({
         source: 'enformion',
