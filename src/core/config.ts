@@ -31,8 +31,6 @@ export const config = {
   // FEC (openFEC) political-donations API. DEMO_KEY works but is rate-limited;
   // a free api.data.gov key lifts the limit.
   fecKey: opt('FEC_API_KEY') ?? 'DEMO_KEY',
-  // OpenCorporates business-registry API token (free tier available).
-  openCorporatesToken: opt('OPENCORPORATES_TOKEN'),
   // HaveIBeenPwned API key ($3.95/mo) — email → data breaches he's been in.
   hibpKey: opt('HIBP_API_KEY'),
   // Bright Data Web Unlocker — public Instagram/TikTok profile data (legal).
