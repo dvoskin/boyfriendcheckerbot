@@ -82,12 +82,25 @@ const NUDGE = [
   'no slash needed. For example:  <code>@johndoe</code>  or  <code>John Smith</code>',
 ].join('\n');
 
+/** Profile-page path segments that are never usernames. */
+const NOT_HANDLE = new Set(['p', 'reel', 'reels', 'explore', 'stories', 'share', 'about', 'home', 'i']);
+
 /** Best-effort type detection so plain messages work without a command. */
 function detectSubject(text: string): Subject {
   const raw = text.trim();
   const [beforePipe, afterPipe] = raw.split('|').map((s) => s.trim());
   const value = beforePipe ?? raw;
   const hints = afterPipe;
+
+  // A pasted social profile URL → pull his handle out and search that. People
+  // WILL paste "instagram.com/hisname" — without this it would choke.
+  const social = /(?:instagram|tiktok|twitter|x|facebook|threads|pinterest|github)\.com\/@?([a-z0-9._-]{2,40})|(?:t\.me|telegram\.me)\/@?([a-z0-9._-]{2,40})|linkedin\.com\/in\/([a-z0-9-]{2,60})/i.exec(
+    value,
+  );
+  const handle = social?.[1] ?? social?.[2] ?? social?.[3];
+  if (handle && !NOT_HANDLE.has(handle.toLowerCase())) {
+    return { raw: value, kind: 'username', value: handle.toLowerCase(), hints };
+  }
 
   let kind: SubjectKind;
   if (/^@?[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(value)) kind = 'email';
