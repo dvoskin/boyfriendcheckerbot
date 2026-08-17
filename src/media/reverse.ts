@@ -1,3 +1,4 @@
+import { tryCharge } from '../core/budget.js';
 import { config } from '../core/config.js';
 import type { Finding } from '../core/types.js';
 
@@ -57,6 +58,7 @@ interface LensResponse {
  */
 export async function reverseImageSearch(buf: Buffer, now: string): Promise<Finding[] | null> {
   if (!config.serpapiKey) return null;
+  if (!(await tryCharge('reverse'))) return null; // daily budget reached
 
   const hostedUrl = await uploadTemporary(buf, 'photo.jpg');
   if (!hostedUrl) {

@@ -1,3 +1,4 @@
+import { tryCharge } from '../core/budget.js';
 import { config } from '../core/config.js';
 import type { Finding, Source, Subject } from '../core/types.js';
 
@@ -77,6 +78,20 @@ export const enformionSource: Source = {
     if (!config.enformionName || !config.enformionPassword) return null;
     const np = nameParts(subject);
     if (!np) return null;
+
+    // Respect the daily spend cap — deep background is the priciest source.
+    if (!(await tryCharge('enformion'))) {
+      return [
+        {
+          source: 'enformion',
+          label: 'Deep background',
+          title: '🔒 Deep background paused (daily budget reached)',
+          detail: 'The daily spend cap for paid data was hit. It resets tomorrow, or raise DAILY_SPEND_CAP_USD.',
+          retrievedAt: ctx.now,
+          confidence: 0.3,
+        },
+      ];
+    }
 
     const stateHint = /\b([A-Z]{2})\b/.exec((ctx.hints ?? '').toUpperCase())?.[1];
 

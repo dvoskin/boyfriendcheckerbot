@@ -1,3 +1,4 @@
+import { tryCharge } from '../core/budget.js';
 import { config } from '../core/config.js';
 import type { Finding, Source } from '../core/types.js';
 
@@ -97,6 +98,7 @@ export const brightDataSource: Source = {
     if (!config.brightDataKey) return null;
     const u = subject.value.replace(/^@/, '');
     if (!/^[a-zA-Z0-9._]{2,30}$/.test(u)) return null;
+    if (!(await tryCharge('brightdata'))) return null; // daily budget reached
 
     const results = await Promise.all(
       PLATFORMS.map(async (p) => {

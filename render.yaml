@@ -24,6 +24,9 @@ services:
       # How often the watch loop re-checks (minutes). Lower it while testing.
       - key: WATCH_INTERVAL_MIN
         value: "360"
+      # Daily cap (USD) on paid sources — protects against surprise bills.
+      - key: DAILY_SPEND_CAP_USD
+        value: "50"
       # Secrets: declared here so the blueprint knows them, but their VALUES are
       # entered in the Render dashboard (Environment tab), never committed.
       - key: BOT_TOKEN

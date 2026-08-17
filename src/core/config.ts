@@ -43,6 +43,9 @@ export const config = {
   dataDir: process.env.DATA_DIR ?? './data',
   // How often the watch loop re-checks each watched person, in minutes.
   watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),
+  // Daily cap (USD) on the paid data sources. Once hit, paid sources pause for
+  // the day while the free ones keep working. Protects against a surprise bill.
+  dailySpendCapUsd: Number(process.env.DAILY_SPEND_CAP_USD ?? '50'),
   allowedUserIds: (process.env.ALLOWED_USER_IDS ?? '')
     .split(',')
     .map((s) => s.trim())

@@ -1,3 +1,4 @@
+import { tryCharge } from '../core/budget.js';
 import { config } from '../core/config.js';
 import type { Finding, Source } from '../core/types.js';
 
@@ -50,6 +51,7 @@ export const phoneSource: Source = {
 
   async run(subject, ctx) {
     if (!config.twilioSid || !config.twilioToken) return null;
+    if (!(await tryCharge('phone'))) return null; // daily budget reached
 
     const e164 = toE164(subject.value);
     const auth = Buffer.from(`${config.twilioSid}:${config.twilioToken}`).toString('base64');

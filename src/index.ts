@@ -7,6 +7,7 @@ import { runSources } from './core/runner.js';
 import type { SourceResult, Subject, SubjectKind } from './core/types.js';
 import { analyzeImage } from './media/provenance.js';
 import { reverseImageSearch } from './media/reverse.js';
+import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
@@ -262,6 +263,17 @@ async function main(): Promise<void> {
     ctx.reply(consented.has(ctx.from?.id ?? 0) ? HELP : TERMS, { parse_mode: 'HTML' }),
   );
   bot.command('help', (ctx) => ctx.reply(HELP, { parse_mode: 'HTML' }));
+
+  bot.command('budget', async (ctx) => {
+    if (!guard(ctx)) return;
+    const spent = await spentToday();
+    const cap = config.dailySpendCapUsd;
+    const pct = Math.round((spent / cap) * 100);
+    await ctx.reply(
+      `💰 <b>Today's spend:</b> $${spent.toFixed(2)} / $${cap.toFixed(2)} (${pct}%)\n${spent >= cap ? '🔒 Paid sources paused until midnight.' : '✅ Paid sources active.'}`,
+      { parse_mode: 'HTML' },
+    );
+  });
 
   bot.command('agree', async (ctx) => {
     const id = ctx.from?.id;
