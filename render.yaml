@@ -51,5 +51,18 @@ services:
         sync: false
       - key: OPENCORPORATES_TOKEN
         sync: false
+      # Email breaches (incl. dating-app accounts).
+      - key: HIBP_API_KEY
+        sync: false
+      # Bright Data: public Instagram/TikTok profile data.
+      - key: BRIGHTDATA_API_KEY
+        sync: false
+      - key: BRIGHTDATA_ZONE
+        value: web_unlocker1
+      # UniCourt: state & federal court records.
+      - key: UNICOURT_CLIENT_ID
+        sync: false
+      - key: UNICOURT_CLIENT_SECRET
+        sync: false
       - key: ALLOWED_USER_IDS
         sync: false

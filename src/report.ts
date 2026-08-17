@@ -186,7 +186,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   // Kept separate from everything else because it is the highest-stakes result
   // and must never be diluted or misread. The registry source already filters to
   // real name matches, so anything here actually names him.
-  const safety = all.filter((f) => ['registry', 'ofac', 'adverse'].includes(f.source));
+  const safety = all.filter((f) => ['registry', 'ofac', 'adverse', 'scam', 'unicourt'].includes(f.source));
   if (safety.length) {
     // Worst news first: adverse-media hits and sanctions before all-clear lines.
     safety.sort((a, b) => b.confidence - a.confidence);
@@ -244,8 +244,16 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     return p === 'x' ? 'X/Twitter' : p ? p[0]!.toUpperCase() + p.slice(1) : 'Profile';
   };
 
-  if (socialProfiles.length) {
+  // Bright Data pulls the actual public IG/TikTok profile (followers, bio).
+  const socialContent = all.filter((f) => f.source === 'brightdata');
+
+  if (socialProfiles.length || socialContent.length) {
     const sp = ['🩷 <b>Social media</b>', ''];
+    for (const f of socialContent) {
+      sp.push(`<b>${escapeHtml(f.title)}</b>`);
+      if (f.detail) for (const line of f.detail.split('\n')) sp.push(escapeHtml(line));
+      sp.push('');
+    }
     for (const f of socialProfiles.slice(0, 8)) {
       sp.push(`• <b>${escapeHtml(platformName(f.url!))}:</b> <a href="${escapeHtml(f.url!)}">${escapeHtml(f.title)}</a>`);
     }

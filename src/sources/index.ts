@@ -2,7 +2,10 @@ import type { Source } from '../core/types.js';
 import { academicSource } from './academic.js';
 import { adverseSource } from './adverse.js';
 import { blueskySource } from './bluesky.js';
+import { brightDataSource } from './brightdata.js';
 import { hibpSource } from './hibp.js';
+import { scamSource } from './scam.js';
+import { uniCourtSource } from './unicourt.js';
 import { wikipediaSource } from './wikipedia.js';
 import { courtListenerSource } from './courtlistener.js';
 import { crtshSource } from './crtsh.js';
@@ -48,4 +51,7 @@ export const ALL_SOURCES: Source[] = [
   hibpSource,
   wikipediaSource,
   academicSource,
+  scamSource,
+  brightDataSource,
+  uniCourtSource,
 ];

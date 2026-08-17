@@ -35,6 +35,13 @@ export const config = {
   openCorporatesToken: opt('OPENCORPORATES_TOKEN'),
   // HaveIBeenPwned API key ($3.95/mo) — email → data breaches he's been in.
   hibpKey: opt('HIBP_API_KEY'),
+  // Bright Data Web Unlocker — public Instagram/TikTok profile data (legal).
+  brightDataKey: opt('BRIGHTDATA_API_KEY'),
+  brightDataZone: opt('BRIGHTDATA_ZONE') ?? 'web_unlocker1',
+  // UniCourt — state & federal court records (criminal, civil, family/divorce).
+  // OAuth2 client credentials.
+  uniCourtClientId: opt('UNICOURT_CLIENT_ID'),
+  uniCourtClientSecret: opt('UNICOURT_CLIENT_SECRET'),
   dataDir: process.env.DATA_DIR ?? './data',
   // How often the watch loop re-checks each watched person, in minutes.
   watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),
