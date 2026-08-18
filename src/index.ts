@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Bot, type Context, InlineKeyboard } from 'grammy';
+import { Bot, type Context, InlineKeyboard, InputFile } from 'grammy';
 import { audit } from './core/audit.js';
 import { config, requireBotToken } from './core/config.js';
 import { runSources } from './core/runner.js';
@@ -16,7 +16,8 @@ import { hasOptedIn, optIn } from './core/match.js';
 import { addTokens, applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, isFree, type RevealKey, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
-import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, synthesize } from './report.js';
+import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
+import { renderCardPng } from './media/card.js';
 import { type Candidate, enformionCandidates } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
@@ -33,7 +34,7 @@ const pendingCity = new Map<number, string>();
 /** The last person each user searched — so a "🚩 Flag" tap knows who to flag. */
 const lastSearched = new Map<
   number,
-  { seed: Subject; keys: string[]; locked?: LockedSection[]; unlocked?: Set<RevealKey> }
+  { seed: Subject; keys: string[]; locked?: LockedSection[]; unlocked?: Set<RevealKey>; summary?: ReportSummary }
 >();
 
 /** Users we asked "how do you know them?" — their next message is the label. */
@@ -403,7 +404,7 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     for (const chunk of parts.free) {
       await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
     }
-    lastSearched.set(ctx.from!.id, { seed, keys, locked: parts.locked, unlocked: new Set() });
+    lastSearched.set(ctx.from!.id, { seed, keys, locked: parts.locked, unlocked: new Set(), summary: parts.summary });
 
     // The money engine: offer each juicy section as a one-tap token unlock.
     if (!parts.thin && parts.locked.length) {
@@ -430,7 +431,9 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     if (missing.phone) actions.text('📱 Add their phone', 'ask:phone');
     if (missing.email || missing.phone) actions.row();
     actions
+      .text('🖼️ Share card', 'sharecard')
       .text('🚩 Flag them', 'flag')
+      .row()
       .text('🏷️ How you know them', 'label')
       .row()
       .text('🤝 Are we dating the same person?', 'samematch')
@@ -776,6 +779,27 @@ async function main(): Promise<void> {
       '💬 <b>Type your message</b> and I’ll pass it along anonymously.\n<i>Be kind and stick to your own experience — messages are between real people. Nothing you type reveals who you are.</i>',
       { parse_mode: 'HTML' },
     );
+  });
+
+  // "🖼️ Share card" → send an anonymized, branded verdict image for the group chat/TikTok.
+  bot.callbackQuery('sharecard', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const last = lastSearched.get(ctx.from.id);
+    if (!last?.summary) {
+      await ctx.reply('Run a check first, then tap 🖼️ to get a shareable card.');
+      return;
+    }
+    try {
+      const png = renderCardPng(last.summary);
+      const link = `https://t.me/${botUsername}?start=ref_${ctx.from.id}`;
+      await ctx.replyWithPhoto(new InputFile(png, 'checkmate.png'), {
+        caption: `♟️ Ran them through Checkmate. Check anyone before you meet them 👇\n${link}`,
+      });
+    } catch (err) {
+      console.error('card render failed:', err);
+      await ctx.reply('😬 Couldn’t make the card — try again in a moment.');
+    }
   });
 
   // "🔍 Check someone else" → straight back to the main menu, no typing.

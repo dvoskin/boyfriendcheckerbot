@@ -15,11 +15,21 @@ export interface LockedSection {
   chunks: string[]; // the section content, pre-chunked for Telegram
 }
 
+/** The at-a-glance data behind the verdict — used to draw the shareable card. */
+export interface ReportSummary {
+  name: string;
+  verdict: string; // e.g. "PROCEED WITH CAUTION"
+  score: number; // 0–100
+  red: number;
+  green: number;
+}
+
 /** A report split into the free verdict and the paywalled reveals. */
 export interface ReportParts {
   free: string[]; // verdict card (+ thin nudge) — always shown
   locked: LockedSection[]; // the juicy sections, behind token unlocks
   thin: boolean; // true when we found almost nothing (skip the paywall)
+  summary: ReportSummary; // for the shareable card
 }
 
 export function escapeHtml(s: string): string {
@@ -473,7 +483,14 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   const order: RevealKey[] = ['safety', 'single', 'social', 'tea'];
   locked.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
 
-  return { free, locked, thin };
+  const summary: ReportSummary = {
+    name: seed.raw,
+    verdict: verdict.replace(/^[^A-Z]*/, ''), // drop the leading emoji for the card
+    score,
+    red: red.length,
+    green: green.length,
+  };
+  return { free, locked, thin, summary };
 }
 
 /** Legacy full-report render (everything concatenated) — kept for any caller. */
