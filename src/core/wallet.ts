@@ -20,16 +20,33 @@ export const TOKENS = {
   referred: 20, // you joined via an invite
 };
 
-/** What each action costs. Kept low so daily + referral covers casual use. */
+/**
+ * Base cost of a search — this only buys the VERDICT + flag scoreboard (the free
+ * hook). The juicy detail is unbundled into per-reveal unlocks below, so the base
+ * is cheap and the curiosity gap does the selling.
+ */
 export const COST = {
-  person: 15,
-  username: 8,
-  email: 8,
-  phone: 8,
-  domain: 5,
-  company: 10,
-  image: 10,
+  person: 6,
+  username: 4,
+  email: 4,
+  phone: 4,
+  domain: 3,
+  company: 5,
+  image: 6,
 };
+
+/**
+ * Per-reveal unlock prices — the money engine. After the free verdict, each of
+ * these unlocks one juicy section. Kept modest so daily + invite keeps casual
+ * users unblocked, but every reveal is a fresh little "yes".
+ */
+export const REVEAL = {
+  single: 6, // relationship status + likely partner + who they really are
+  safety: 8, // criminal / court / registry / sanctions / scam
+  social: 5, // socials, hidden accounts, breaches, old profiles
+  tea: 6, // the full AI "honest read"
+};
+export type RevealKey = keyof typeof REVEAL;
 
 interface Wallet {
   balance: number;

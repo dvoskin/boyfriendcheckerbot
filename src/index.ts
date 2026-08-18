@@ -10,10 +10,10 @@ import { reverseImageSearch } from './media/reverse.js';
 import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
-import { applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, spend, TOKENS } from './core/wallet.js';
+import { applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, type RevealKey, spend, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
-import { escapeHtml, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReport, synthesize } from './report.js';
+import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, synthesize } from './report.js';
 import { type Candidate, enformionCandidates } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
@@ -28,7 +28,10 @@ const pendingInput = new Map<number, SubjectKind>();
 const pendingCity = new Map<number, string>();
 
 /** The last person each user searched — so a "🚩 Flag" tap knows who to flag. */
-const lastSearched = new Map<number, { seed: Subject; keys: string[] }>();
+const lastSearched = new Map<
+  number,
+  { seed: Subject; keys: string[]; locked?: LockedSection[]; unlocked?: Set<RevealKey> }
+>();
 
 /** Users we asked "how do you know them?" — their next message is the label. */
 const pendingLabel = new Set<number>();
@@ -369,16 +372,31 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
         },
       );
       return;
-    } else {
-      const chunks = renderReport(seed, graph, dossier);
-      for (const chunk of chunks) {
-        await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
-      }
+    }
+
+    // Free tier: the verdict card + scoreboard. The juicy detail is paywalled.
+    const parts = renderReportParts(seed, graph, dossier);
+    for (const chunk of parts.free) {
+      await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+    }
+    lastSearched.set(ctx.from!.id, { seed, keys, locked: parts.locked, unlocked: new Set() });
+
+    // The money engine: offer each juicy section as a one-tap token unlock.
+    if (!parts.thin && parts.locked.length) {
+      const kb = new InlineKeyboard();
+      parts.locked.forEach((s, i) => {
+        kb.text(`${s.label} · ${s.cost}🪙`, `reveal:${s.key}`);
+        if (i % 2 === 1) kb.row();
+      });
+      const bal = await balanceOf(ctx.from!.id);
+      await ctx.reply(`🔓 <b>Want the full story?</b> Tap to unlock 👇\n<i>You’ve got <b>${bal}</b> 🪙 — top up free with 🎁 /daily</i>`, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
     }
 
     // Everything the user can do next is a TAP, never a typed command. This is
     // the one-tap action hub attached to every report.
-    lastSearched.set(ctx.from!.id, { seed, keys });
     const missing = missingSelectors(seed, graph);
     const actions = new InlineKeyboard()
       .text('🔔 Watch 24/7', 'watch:last')
@@ -596,6 +614,45 @@ async function main(): Promise<void> {
     } catch {
       await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
       await ctx.reply('😬 Couldn’t set up the watch — try again in a moment.');
+    }
+  });
+
+  // A locked section tapped → spend tokens (once) and reveal it. The money engine.
+  bot.callbackQuery(/^reveal:(.+)$/, async (ctx) => {
+    if (!guard(ctx)) {
+      await ctx.answerCallbackQuery().catch(() => {});
+      return;
+    }
+    const key = ctx.match![1] as RevealKey;
+    const last = lastSearched.get(ctx.from.id);
+    const section = last?.locked?.find((s) => s.key === key);
+    if (!last || !section) {
+      await ctx.answerCallbackQuery('Run a fresh check first 💫').catch(() => {});
+      return;
+    }
+    const already = last.unlocked?.has(key);
+    if (!already) {
+      if (!(await spend(ctx.from.id, section.cost))) {
+        await ctx.answerCallbackQuery({ text: 'Not enough tokens — grab more 👇', show_alert: false }).catch(() => {});
+        await earnMore(ctx);
+        return;
+      }
+      last.unlocked?.add(key);
+    }
+    await ctx.answerCallbackQuery(already ? 'Already unlocked 💛' : `Unlocked! −${section.cost} 🪙`).catch(() => {});
+    for (const chunk of section.chunks) {
+      await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+    }
+    // Re-offer the sections they still haven't unlocked, so the next tap is easy.
+    const remaining = (last.locked ?? []).filter((s) => !last.unlocked?.has(s.key));
+    if (remaining.length) {
+      const kb = new InlineKeyboard();
+      remaining.forEach((s, i) => {
+        kb.text(`${s.label} · ${s.cost}🪙`, `reveal:${s.key}`);
+        if (i % 2 === 1) kb.row();
+      });
+      const bal = await balanceOf(ctx.from.id);
+      await ctx.reply(`🔓 <b>More to uncover</b> — you’ve got <b>${bal}</b> 🪙`, { parse_mode: 'HTML', reply_markup: kb });
     }
   });
 

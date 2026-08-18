@@ -3,8 +3,24 @@ import { config } from './core/config.js';
 import type { Dossier } from './core/dossier.js';
 import type { GraphResult } from './core/graph.js';
 import type { Finding, SourceResult, Subject } from './core/types.js';
+import { REVEAL, type RevealKey } from './core/wallet.js';
 
 const TELEGRAM_LIMIT = 4096;
+
+/** One paywalled section of a report — revealed when the user spends tokens. */
+export interface LockedSection {
+  key: RevealKey;
+  label: string; // button text
+  cost: number;
+  chunks: string[]; // the section content, pre-chunked for Telegram
+}
+
+/** A report split into the free verdict and the paywalled reveals. */
+export interface ReportParts {
+  free: string[]; // verdict card (+ thin nudge) — always shown
+  locked: LockedSection[]; // the juicy sections, behind token unlocks
+  thin: boolean; // true when we found almost nothing (skip the paywall)
+}
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -125,9 +141,9 @@ function chunk(sections: string[]): string[] {
  * the data is weak. No confidence numbers, no "selectors", no raw trees — those
  * live in /g for power users. One clean story, top to bottom.
  */
-export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier): string[] {
+export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Dossier): ReportParts {
   const all = graph.nodes.flatMap((n) => n.findings);
-  const sections: string[] = [];
+  const free: string[] = [];
 
   // ── 1. Summary card — header + the at-a-glance answers, ONE opening bubble ─
   const flags = dossier.signals.filter((s) => s.level !== 'info');
@@ -253,23 +269,33 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   else card.push('   <i>· none confirmed yet</i>');
 
   card.push('', '📸 <i>screenshot this before your next move</i>');
-  sections.push(card.join('\n'));
+  free.push(card.join('\n'));
 
-  // ── 1.7 Thin-footprint callout — turn an empty result into a next step ───
+  // ── Thin-footprint callout — turn an empty result into a next step ───────
   if (thin) {
-    const tips: string[] = ['⚠️ <b>Not much came back on this one.</b>', 'To pull the <b>full report</b>, give me a sharper lead:', ''];
-    if (seed.kind === 'person') tips.push(`📍 add a <b>city</b> →  <code>${escapeHtml(seed.raw)} | Miami</code>`);
+    const tips: string[] = ['⚠️ <b>Not much came back on this one.</b>', 'For a fuller report, give me a sharper lead:', ''];
+    if (seed.kind === 'person') tips.push('📍 add a <b>city</b>  (tap 🔍 and send  <code>John Smith | Miami</code>)');
     tips.push('💬 their <b>@username</b> — best for socials');
     tips.push('📧 their <b>email</b> — hidden accounts + breaches');
     tips.push('📸 their <b>photo</b> — catfish check');
     tips.push('', '<i>Common names with no city come back thin — that’s how public records work, not a miss. 💛</i>');
-    sections.push(tips.join('\n'));
+    free.push(tips.join('\n'));
   }
 
-  // ── 2. The tea — the warm plain-English read, right after the verdict ────
-  if (dossier.narrative) sections.push(`☕ <b>THE TEA</b> — <i>what it all actually means</i>\n\n${escapeHtml(dossier.narrative)}`);
+  // ── Build the four paywalled buckets. Each is only offered if it has data. ──
+  const locked: LockedSection[] = [];
 
-  // ── 3. Is he safe? — highest-stakes, never diluted ───────────────────────
+  // ☕ THE TEA — the AI honest read.
+  if (dossier.narrative) {
+    locked.push({
+      key: 'tea',
+      label: `☕ The full tea`,
+      cost: REVEAL.tea,
+      chunks: chunk([`☕ <b>THE TEA</b> — <i>what it all actually means</i>\n\n${escapeHtml(dossier.narrative)}`]),
+    });
+  }
+
+  // 🛡️ SAFETY — the highest-stakes bucket: criminal/court/registry/sanctions/scam.
   const safety = all.filter(
     (f) =>
       ['registry', 'ofac', 'adverse', 'scam', 'unicourt', 'criminal', 'ipqs', 'emailrep'].includes(f.source) ||
@@ -277,89 +303,28 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   );
   if (safety.length) {
     safety.sort((a, b) => b.confidence - a.confidence);
-    const s = ['🛡️ <b>Are they safe?</b>', ''];
+    const s = ['🛡️ <b>Safety check</b>', ''];
     for (const f of safety) {
       s.push(f.url ? `• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>` : `• ${escapeHtml(f.title)}`);
       const first = f.detail?.split('\n')[0];
       if (first) s.push(`  <i>${escapeHtml(first)}</i>`);
     }
-    sections.push(s.join('\n'));
+    locked.push({ key: 'safety', label: '🛡️ Safety & records', cost: REVEAL.safety, chunks: chunk([s.join('\n')]) });
   }
 
-  // ── 3.5 The real him — the richest personal data, kept high ──────────────
+  // 💍 SINGLE & THE REAL THEM — relationship + relatives/addresses + job/business/records.
+  const singleBlocks: string[] = [];
   const deep = all.filter((f) => (f.source === 'enformion' && f.label !== 'Criminal record') || f.source === 'spokeo');
   if (deep.length) {
-    const d = ['💜 <b>Who they really are</b>', ''];
+    const d = ['💍 <b>Single or taken? The real them</b>', ''];
     for (const f of deep) {
       d.push(`<b>${escapeHtml(f.title)}</b>`);
       if (f.detail) for (const line of f.detail.split('\n')) d.push(escapeHtml(line));
       d.push('');
     }
     d.push('<i>💡 Public-records data — powerful but not perfect. Double-check it’s the right person (age + city).</i>');
-    sections.push(d.join('\n'));
+    singleBlocks.push(d.join('\n'));
   }
-
-  // ── 4. Accounts, split into "very likely him" vs "same handle, verify" ───
-  const acctText = (f: (typeof all)[number]): string =>
-    f.source === 'usernames' ? f.label : `${f.label} ${f.title}`;
-
-  const seen = new Set<string>();
-  const social = all.filter((f) => {
-    if (!f.url || !['usernames', 'github', 'bluesky'].includes(f.source)) return false;
-    if (f.confidence < 0.5) return false; // drop fuzzy same-name strangers
-    if (seen.has(f.url)) return false;
-    seen.add(f.url);
-    return true;
-  });
-  const strong = social.filter((f) => f.confidence >= 0.7);
-  const weak = social.filter((f) => f.confidence < 0.7);
-
-  // Direct social profiles found on the web (his actual Instagram/LinkedIn/etc).
-  const socialSeen = new Set<string>();
-  const socialProfiles = all.filter((f) => {
-    if (f.source !== 'search' || !f.url) return false;
-    if (!/(?<!\w)(?:instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com\//i.test(f.url)) return false;
-    if (socialSeen.has(f.url)) return false;
-    socialSeen.add(f.url);
-    return true;
-  });
-  const platformName = (url: string): string => {
-    const m = /(?<!\w)(instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com/i.exec(url);
-    const p = m?.[1]?.toLowerCase();
-    return p === 'x' ? 'X/Twitter' : p ? p[0]!.toUpperCase() + p.slice(1) : 'Profile';
-  };
-
-  // Bright Data pulls the actual public IG/TikTok profile (followers, bio).
-  const socialContent = all.filter((f) => f.source === 'brightdata');
-
-  if (socialProfiles.length || socialContent.length) {
-    const sp = ['🩷 <b>Social media</b>', ''];
-    for (const f of socialContent) {
-      sp.push(`<b>${escapeHtml(f.title)}</b>`);
-      if (f.detail) for (const line of f.detail.split('\n')) sp.push(escapeHtml(line));
-      sp.push('');
-    }
-    for (const f of socialProfiles.slice(0, 8)) {
-      sp.push(`• <b>${escapeHtml(platformName(f.url!))}:</b> <a href="${escapeHtml(f.url!)}">${escapeHtml(f.title)}</a>`);
-    }
-    sections.push(sp.join('\n'));
-  }
-
-  if (strong.length || weak.length) {
-    const acct = ['📱 <b>Other accounts under this handle</b>'];
-    if (strong.length) {
-      acct.push('', '✅ <b>Very likely them:</b>');
-      for (const f of strong) acct.push(`• <a href="${escapeHtml(f.url!)}">${escapeHtml(acctText(f))}</a>`);
-    }
-    if (weak.length) {
-      acct.push('', '🤔 <b>Same username — could be someone else:</b>');
-      for (const f of weak.slice(0, 15)) acct.push(`• <a href="${escapeHtml(f.url!)}">${escapeHtml(acctText(f))}</a>`);
-    }
-    acct.push('', '<i>💡 Same username ≠ same person. Check the profile pics match before you trust it.</i>');
-    sections.push(acct.join('\n'));
-  }
-
-  // ── 4. Public records & web mentions (the meat of a name search) ─────────
   const recSeen = new Set<string>();
   const records = all.filter((f) => {
     if (
@@ -374,21 +339,74 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     return true;
   });
   if (records.length) {
-    // FEC (job/employer/money/politics) and businesses are high-signal — lead with them.
     records.sort((a, b) => {
       const rank = (s: string) => (s === 'fec' ? 0 : s === 'opencorporates' ? 1 : s === 'sec' || s === 'nppes' ? 2 : 3);
       return rank(a.source) - rank(b.source);
     });
-    const rec = ['📄 <b>Public records &amp; mentions</b>', ''];
+    const rec = ['📄 <b>Job, money &amp; public records</b>', ''];
     for (const f of records.slice(0, 10)) {
       rec.push(f.url ? `• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>` : `• ${escapeHtml(f.title)}`);
       const first = f.detail?.split('\n')[0];
       if (first && f.source !== 'search') rec.push(`  <i>${escapeHtml(first)}</i>`);
     }
-    sections.push(rec.join('\n'));
+    singleBlocks.push(rec.join('\n'));
+  }
+  if (singleBlocks.length) {
+    locked.push({ key: 'single', label: '💍 Single or taken?', cost: REVEAL.single, chunks: chunk(singleBlocks) });
   }
 
-  // ── 4.5 Hidden accounts & breaches (incl. dating-app signal) ─────────────
+  // 🩷 SOCIALS & HIDDEN ACCOUNTS — profiles, same-handle accounts, breaches, archives.
+  const socialBlocks: string[] = [];
+  const acctText = (f: (typeof all)[number]): string => (f.source === 'usernames' ? f.label : `${f.label} ${f.title}`);
+  const seen = new Set<string>();
+  const social = all.filter((f) => {
+    if (!f.url || !['usernames', 'github', 'bluesky'].includes(f.source)) return false;
+    if (f.confidence < 0.5) return false;
+    if (seen.has(f.url)) return false;
+    seen.add(f.url);
+    return true;
+  });
+  const strong = social.filter((f) => f.confidence >= 0.7);
+  const weak = social.filter((f) => f.confidence < 0.7);
+  const socialSeen = new Set<string>();
+  const socialProfiles = all.filter((f) => {
+    if (f.source !== 'search' || !f.url) return false;
+    if (!/(?<!\w)(?:instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com\//i.test(f.url)) return false;
+    if (socialSeen.has(f.url)) return false;
+    socialSeen.add(f.url);
+    return true;
+  });
+  const platformName = (url: string): string => {
+    const m = /(?<!\w)(instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com/i.exec(url);
+    const p = m?.[1]?.toLowerCase();
+    return p === 'x' ? 'X/Twitter' : p ? p[0]!.toUpperCase() + p.slice(1) : 'Profile';
+  };
+  const socialContent = all.filter((f) => f.source === 'brightdata');
+  if (socialProfiles.length || socialContent.length) {
+    const sp = ['🩷 <b>Social media</b>', ''];
+    for (const f of socialContent) {
+      sp.push(`<b>${escapeHtml(f.title)}</b>`);
+      if (f.detail) for (const line of f.detail.split('\n')) sp.push(escapeHtml(line));
+      sp.push('');
+    }
+    for (const f of socialProfiles.slice(0, 8)) {
+      sp.push(`• <b>${escapeHtml(platformName(f.url!))}:</b> <a href="${escapeHtml(f.url!)}">${escapeHtml(f.title)}</a>`);
+    }
+    socialBlocks.push(sp.join('\n'));
+  }
+  if (strong.length || weak.length) {
+    const acct = ['📱 <b>Other accounts under this handle</b>'];
+    if (strong.length) {
+      acct.push('', '✅ <b>Very likely them:</b>');
+      for (const f of strong) acct.push(`• <a href="${escapeHtml(f.url!)}">${escapeHtml(acctText(f))}</a>`);
+    }
+    if (weak.length) {
+      acct.push('', '🤔 <b>Same username — could be someone else:</b>');
+      for (const f of weak.slice(0, 15)) acct.push(`• <a href="${escapeHtml(f.url!)}">${escapeHtml(acctText(f))}</a>`);
+    }
+    acct.push('', '<i>💡 Same username ≠ same person. Check the profile pics match before you trust it.</i>');
+    socialBlocks.push(acct.join('\n'));
+  }
   const breaches = all.filter((f) => f.source === 'hibp');
   if (breaches.length) {
     const b = ['🔓 <b>Hidden accounts &amp; leaks</b>', ''];
@@ -397,17 +415,9 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
       if (f.detail) for (const line of f.detail.split('\n')) b.push(escapeHtml(line));
     }
     b.push('', '<i>💡 A dating/adult site here means they had an account there. Leaks also reveal accounts they never mentioned.</i>');
-    sections.push(b.join('\n'));
+    socialBlocks.push(b.join('\n'));
   }
-
-  // ── 5. Contact traces: phone, linked emails & personal sites ─────────────
   const contact: string[] = [];
-  for (const f of all.filter((f) => f.source === 'phone')) {
-    contact.push(`• ${escapeHtml(f.title)}`);
-    const first = f.detail?.split('\n')[0];
-    if (first) contact.push(`  <i>${escapeHtml(first)}</i>`);
-  }
-  // Don't repeat emails already listed in the Enformion "Their emails" block.
   const enfEmails = new Set(
     all
       .filter((f) => f.source === 'enformion' && f.label === 'Emails')
@@ -421,19 +431,28 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   for (const d of graph.nodes.filter((n) => n.depth > 0 && n.kind === 'domain')) {
     contact.push(`• 🌐 Website linked to them: ${escapeHtml(d.value)}`);
   }
-  if (contact.length) sections.push(['📇 <b>Contact traces</b>', '', ...contact].join('\n'));
-
-  // ── 6. Old / deleted profiles (the archive superpower) ───────────────────
+  if (contact.length) socialBlocks.push(['📇 <b>Contact traces</b>', '', ...contact].join('\n'));
   const archived = all.filter((f) => f.source === 'wayback' && /archiv/i.test(`${f.label} ${f.title}`));
   if (archived.length) {
     const a = ['🕰️ <b>Old or deleted profiles</b>', '<i>these existed before — even if they’re gone now 👀</i>', ''];
     for (const f of archived.slice(0, 8)) a.push(`• ${escapeHtml(f.title)}`);
-    sections.push(a.join('\n'));
+    socialBlocks.push(a.join('\n'));
+  }
+  if (socialBlocks.length) {
+    locked.push({ key: 'social', label: '🩷 Socials & hidden accounts', cost: REVEAL.social, chunks: chunk(socialBlocks) });
   }
 
-  // Everything the reader can DO next is a button (attached in index.ts), never a
-  // command to paste — the audience won't type /watch. So the report just ends here.
-  return chunk(sections);
+  // Keep the safety bucket first (highest stakes), then single, social, tea.
+  const order: RevealKey[] = ['safety', 'single', 'social', 'tea'];
+  locked.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+
+  return { free, locked, thin };
+}
+
+/** Legacy full-report render (everything concatenated) — kept for any caller. */
+export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier): string[] {
+  const p = renderReportParts(seed, graph, dossier);
+  return [...p.free, ...p.locked.flatMap((l) => l.chunks)];
 }
 
 /**
