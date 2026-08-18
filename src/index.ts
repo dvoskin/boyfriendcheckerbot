@@ -7,10 +7,11 @@ import { runSources } from './core/runner.js';
 import type { SourceResult, Subject, SubjectKind } from './core/types.js';
 import { analyzeImage } from './media/provenance.js';
 import { reverseImageSearch } from './media/reverse.js';
+import { analyzeScreenshot, type ImageMime } from './media/screenshot.js';
 import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
-import { recordSearch, searchersOf } from './core/searchers.js';
+import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
 import { addTokens, applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, isFree, type RevealKey, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
@@ -40,6 +41,9 @@ const pendingLabel = new Set<number>();
 
 /** Users composing an anonymous note to another matched user (relay target id). */
 const pendingRelay = new Map<number, number>();
+
+/** Users who tapped "read a screenshot" — their next image is AI-analysed, not catfish-checked. */
+const pendingScreenshot = new Set<number>();
 
 /** The bot's @username, for building referral links. Set at startup. */
 let botUsername = 'YourCheckmateBot';
@@ -73,6 +77,7 @@ const mainMenu = new InlineKeyboard()
   .text('📱 Phone', 'ask:phone')
   .row()
   .text('📸 Photo', 'ask:image')
+  .text('🧠 Read a screenshot', 'ask:screenshot')
   .row()
   .text('💎 My tokens', 'balance')
   .text('🎁 Free daily', 'daily')
@@ -360,6 +365,17 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
       await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
     }
 
+    // "You're not the only one" — social proof that reopens the curiosity gap and
+    // makes the network feel alive. Aggregate + anonymous (never who).
+    const stats = await checkStats(keys, ctx.from!.id).catch(() => ({ total: 0, recent: 0 }));
+    if (stats.total > 0) {
+      const line =
+        stats.recent > 0
+          ? `👀 <b>${stats.total}</b> other ${stats.total === 1 ? 'person has' : 'people have'} checked this exact person (<b>${stats.recent}</b> in the last month). You’re not the only one looking. 🤝`
+          : `👀 <b>${stats.total}</b> other ${stats.total === 1 ? 'person has' : 'people have'} checked this exact person before you.`;
+      await ctx.reply(line, { parse_mode: 'HTML' });
+    }
+
     const findingTotal = graph.nodes.reduce((n, node) => n + node.findings.length, 0);
     if (findingTotal === 0) {
       lastSearched.set(ctx.from!.id, { seed, keys });
@@ -608,6 +624,18 @@ async function main(): Promise<void> {
         )
         .catch(() => {});
     }
+  });
+
+  // "🧠 Read a screenshot" → next image is AI-analysed for red flags, not catfish-checked.
+  bot.callbackQuery('ask:screenshot', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    pendingScreenshot.add(ctx.from.id);
+    pendingInput.delete(ctx.from.id);
+    await ctx.reply(
+      '🧠 <b>Screenshot the tea and send it over</b> 📸\nHis dating profile, or your chat with them. I’ll read it for love-bombing, scam scripts, “taken” tells, and anything that doesn’t add up.\n<i>I only read what you send — nothing’s stored.</i>',
+      { parse_mode: 'HTML' },
+    );
   });
 
   // Menu button tapped → prompt for that exact input type, no guessing.
@@ -1086,6 +1114,40 @@ async function main(): Promise<void> {
   // re-encodes them and strips EXIF on the way through.
   bot.on(['message:document', 'message:photo'], async (ctx) => {
     if (!guard(ctx)) return;
+
+    // "🧠 Read a screenshot" mode → AI red-flag read of the user's own screenshot.
+    if (pendingScreenshot.has(ctx.from!.id)) {
+      pendingScreenshot.delete(ctx.from!.id);
+      if (!(await spend(ctx.from!.id, COST.image))) {
+        await earnMore(ctx);
+        return;
+      }
+      const note = await ctx.reply('🧠 Reading the screenshot… holding my drink ☕');
+      try {
+        const file = await ctx.getFile();
+        const url = `https://api.telegram.org/file/bot${requireBotToken()}/${file.file_path}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+        const buf = Buffer.from(await res.arrayBuffer());
+        const mimeRaw = ctx.message?.document?.mime_type ?? 'image/jpeg';
+        const mime: ImageMime = /png/.test(mimeRaw) ? 'image/png' : /webp/.test(mimeRaw) ? 'image/webp' : /gif/.test(mimeRaw) ? 'image/gif' : 'image/jpeg';
+        const read = await analyzeScreenshot(buf, mime).catch(() => null);
+        await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+        await ctx.reply(
+          read
+            ? `🧠 <b>SCREENSHOT READ</b>\n\n${escapeHtml(read)}\n\n<i>💡 This reads only what you sent — one data point, not proof. Trust your gut.</i>`
+            : '😬 Couldn’t read that one — make sure the text is clear and try again.',
+          {
+            parse_mode: 'HTML',
+            reply_markup: new InlineKeyboard().text('🧠 Read another', 'ask:screenshot').row().text('🔍 Check the person', 'check:new'),
+          },
+        );
+      } catch {
+        await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+        await ctx.reply('😬 Something glitched reading that — try again in a moment.');
+      }
+      return;
+    }
+
     if (!(await spend(ctx.from!.id, COST.image))) {
       await earnMore(ctx);
       return;

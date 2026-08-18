@@ -56,3 +56,19 @@ export async function searchersOf(keys: string[], exclude?: number): Promise<num
   for (const k of keys) for (const r of index[k] ?? []) if (r.user !== exclude) users.add(r.user);
   return [...users];
 }
+
+/** How many distinct people have checked this person, and how many in ~30 days. */
+export async function checkStats(keys: string[], exclude?: number): Promise<{ total: number; recent: number }> {
+  await ensureLoaded();
+  const all = new Set<number>();
+  const recent = new Set<number>();
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  for (const k of keys) {
+    for (const r of index[k] ?? []) {
+      if (r.user === exclude) continue;
+      all.add(r.user);
+      if (Date.parse(r.at) >= cutoff) recent.add(r.user);
+    }
+  }
+  return { total: all.size, recent: recent.size };
+}
