@@ -77,7 +77,7 @@ const ASK_PROMPT: Record<string, string> = {
   person: 'Send me their <b>full name</b> 🧑\n<i>Tip: add a city for a sharper match — <code>John Smith | Miami</code></i>',
   username: 'Send me their <b>@username</b> 💬  (Instagram, TikTok, etc.)',
   email: 'Send me their <b>email</b> 📧',
-  phone: 'Send me their <b>phone number</b> 📱',
+  phone: 'Send me the <b>phone number</b> 📱\n<i>I’ll tell you who it’s registered to, if it’s a burner/VoIP, and if it’s flagged for scams.</i>',
   image: 'Send me their <b>photo as a File 📎</b> (not compressed, so the hidden data survives).',
 };
 

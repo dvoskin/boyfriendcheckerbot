@@ -271,6 +271,33 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   card.push('', '📸 <i>screenshot this before your next move</i>');
   free.push(card.join('\n'));
 
+  // ── "Who is this number?" card — free, phone searches only ───────────────
+  // Reverse-number lookup is the highest-frequency habit in the category, so the
+  // caller-ID answer (registered name, line type, burner/scam flag) is up front.
+  if (seed.kind === 'phone') {
+    const phoneF = all.filter((f) => f.source === 'phone');
+    const reg = phoneF.find((f) => f.extra?.registeredName)?.extra?.registeredName as string | undefined;
+    const lineType = phoneF.find((f) => f.extra?.lineType)?.extra?.lineType as string | undefined;
+    const carrier = phoneF
+      .map((f) => (f.detail ?? '').split('\n').find((l) => /^Carrier:/i.test(l)))
+      .find(Boolean)
+      ?.replace(/^Carrier:\s*/i, '');
+    const voip = phoneF.some((f) => /voip/i.test(f.title));
+    const fraud = all.find((f) => f.source === 'ipqs' && /phone/i.test(f.label));
+    const fraudRisky = fraud && /🔴|risk|fraud|voip|disposable|recent abuse/i.test(fraud.title);
+
+    const pc = ['📞 <b>WHO IS THIS NUMBER?</b>', ''];
+    pc.push(reg ? `🪪 <b>Registered to:</b> ${escapeHtml(reg)}` : '🪪 <b>Registered name:</b> <i>not published (unlisted)</i>');
+    if (lineType) pc.push(`📶 <b>Line:</b> ${escapeHtml(lineType)}${voip ? ' — ⚠️ VoIP / internet number' : ''}`);
+    if (carrier) pc.push(`🏢 <b>Carrier:</b> ${escapeHtml(carrier)}`);
+    if (fraud) pc.push(`${fraudRisky ? '🚩' : '✅'} <b>Scam check:</b> ${escapeHtml(fraud.title.replace(/^📱\s*/, ''))}`);
+    if (voip && !fraudRisky) pc.push('', '<i>💡 VoIP numbers are common for burners and people hiding their real line.</i>');
+    if (!reg && !lineType && !carrier && !fraud) {
+      pc.push('', '<i>Couldn’t pull carrier data on this one — try their name or email for more.</i>');
+    }
+    free.push(pc.join('\n'));
+  }
+
   // ── Thin-footprint callout — turn an empty result into a next step ───────
   if (thin) {
     const tips: string[] = ['⚠️ <b>Not much came back on this one.</b>', 'For a fuller report, give me a sharper lead:', ''];
