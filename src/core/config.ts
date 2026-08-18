@@ -52,6 +52,9 @@ export const config = {
   spokeoKey: opt('SPOKEO_API_KEY'),
   // 1Lookup — reverse phone → identity + risk from 1000+ sources.
   oneLookupKey: opt('ONELOOKUP_API_KEY'),
+  // Optional companion channel (@handle or -100… id) the bot posts the daily tip
+  // to, as a discovery/growth funnel. Bot must be an admin of it.
+  channelId: opt('CHANNEL_ID'),
   dataDir: process.env.DATA_DIR ?? './data',
   // How often the watch loop re-checks each watched person, in minutes.
   watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),

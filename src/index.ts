@@ -21,7 +21,7 @@ import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from '
 import { chunkText, escapeHtml, type LockedSection, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
 import { renderCardPng } from './media/card.js';
 import { generateDateQuestions } from './core/predate.js';
-import { QUIZ, quizAt, randomQuizIndex, randomTip, tipOfDay } from './core/content.js';
+import { quizAt, randomQuizIndex, tipOfDay } from './core/content.js';
 import { type ChatTurn, coachReply } from './core/coach.js';
 import { analyzeScamText } from './core/scamtext.js';
 import { type Candidate, enformionCandidates, enformionSource } from './sources/enformion.js';
@@ -69,6 +69,9 @@ const pendingVerify = new Set<number>();
 /** Users who tapped "Is this a scam?" — their next message is the text to judge. */
 const pendingScam = new Set<number>();
 
+/** Users checking THEMSELVES — their next message is their own name/number. */
+const pendingSelfCheck = new Set<number>();
+
 /** Users in the AI safety-bestie chat: every message goes to the coach until they leave. */
 const pendingChat = new Set<number>();
 const chatHistory = new Map<number, ChatTurn[]>();
@@ -101,6 +104,7 @@ function resetTextModes(uid: number): void {
   pendingScam.delete(uid);
   pendingPick.delete(uid);
   pendingChat.delete(uid);
+  pendingSelfCheck.delete(uid);
 }
 
 /** Stars price (⭐) for 30 days of the ✅ Verified badge — the second-audience revenue. */
@@ -147,6 +151,7 @@ const mainMenu = new InlineKeyboard()
   .text('🧱 Red-flag wall', 'wall')
   .row()
   .text('✅ Verify yourself', 'verifyme')
+  .text('👀 Am I flagged?', 'checkself')
   .row()
   .text('💎 My tokens', 'balance')
   .text('🎁 Free daily', 'daily')
@@ -831,6 +836,21 @@ async function main(): Promise<void> {
   bot.callbackQuery('chatdone', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (guard(ctx)) await leaveChat(ctx);
+  });
+
+  // ── "Check yourself" — are people talking about you? (curiosity + badge upsell) ──
+  const enterSelfCheck = async (ctx: Context): Promise<void> => {
+    resetTextModes(ctx.from!.id);
+    pendingSelfCheck.add(ctx.from!.id);
+    await ctx.reply(
+      '👀 <b>Curious if people are talking about you?</b>\nSend me <b>your own name</b> (or number) and I’ll check if you’ve been flagged in the community — and whether your info shows up anywhere sketchy.\n<i>/cancel to back out.</i>',
+      { parse_mode: 'HTML' },
+    );
+  };
+  bot.command('me', (ctx) => (guard(ctx) ? enterSelfCheck(ctx) : undefined));
+  bot.callbackQuery('checkself', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await enterSelfCheck(ctx);
   });
 
   bot.command('quiz', (ctx) => (guard(ctx) ? sendQuiz(ctx) : undefined));
@@ -1846,6 +1866,30 @@ async function main(): Promise<void> {
       return;
     }
 
+    // "Check yourself" → community-flag lookup on the user's own identifier.
+    if (pendingSelfCheck.has(uid) && !text.startsWith('/')) {
+      pendingSelfCheck.delete(uid);
+      const meSeed = detectSubject(text);
+      const meKeys = subjectKeys(meSeed);
+      const fs = await lookupFlags(meKeys).catch(() => ({ total: 0, byCategory: [], labels: [] }));
+      logEvent(uid, 'self_check');
+      if (fs.total === 0) {
+        await ctx.reply(
+          '✨ <b>Good news — you’re clean.</b>\nNobody in the community has flagged you. Want to lock in a ✅ Verified badge so dates trust you faster?',
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('✅ Verify me', 'verifyme').row().text('🔍 Check someone', 'check:new') },
+        );
+      } else {
+        const lines = [
+          `⚠️ <b>Heads up — you show up ${fs.total} time${fs.total === 1 ? '' : 's'} in the community.</b>`,
+          ...(fs.byCategory.length ? ['', ...fs.byCategory.map((c) => `${FLAG_LABELS[c.category]} — ${c.count}`)] : []),
+          '',
+          '<i>These are other users’ own experiences, unverified. A ✅ Verified profile lets you show your side.</i>',
+        ];
+        await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('✅ Claim your profile', 'verifyme') });
+      }
+      return;
+    }
+
     // In the AI safety-bestie chat → every message goes to the coach.
     if (pendingChat.has(uid) && !text.startsWith('/')) {
       const today = new Date().toISOString().slice(0, 10);
@@ -2018,6 +2062,35 @@ async function main(): Promise<void> {
 
   const intervalMs = Math.max(5, config.watchIntervalMin) * 60_000;
   setInterval(() => void runWatchSweep(), intervalMs);
+
+  // ── Companion channel: post the red flag of the day, once per day ─────────
+  const postTipToChannel = async (): Promise<boolean> => {
+    if (!config.channelId) return false;
+    const link = `https://t.me/${botUsername}`;
+    await bot.api.sendMessage(
+      config.channelId,
+      [`💅 <b>Red flag of the day</b>`, '', tipOfDay(), '', `🔍 Check anyone you’re dating → ${link}`].join('\n'),
+      { parse_mode: 'HTML' },
+    );
+    return true;
+  };
+  let lastTipDay = '';
+  const tipTick = async (): Promise<void> => {
+    if (!config.channelId) return;
+    const now = new Date();
+    const day = now.toISOString().slice(0, 10);
+    // Post once per day, after 14:00 UTC.
+    if (day !== lastTipDay && now.getUTCHours() >= 14) {
+      lastTipDay = day;
+      await postTipToChannel().catch((e) => console.error('channel post failed:', e));
+    }
+  };
+  setInterval(() => void tipTick(), 30 * 60_000); // check every 30 min
+  // Owner: force a post now (handy for testing / a manual drop).
+  bot.command('postnow', async (ctx) => {
+    const ok = await postTipToChannel().catch(() => false);
+    await ctx.reply(ok ? '✅ Posted the tip to the channel.' : '❌ No CHANNEL_ID set (or the bot isn’t an admin there).');
+  });
 
   // Learn our own @username (for referral links) and publish the command menu.
   try {
