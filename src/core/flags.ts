@@ -68,17 +68,29 @@ export function subjectKeys(
   const keys = new Set<string>();
   const add = (k: string) => keys.add(k);
 
-  if (seed.kind === 'phone') add(`phone:${seed.value.replace(/\D/g, '')}`);
-  else if (seed.kind === 'email') add(`email:${seed.value.toLowerCase()}`);
+  // Phones always keyed to the last 10 digits so a search WITH a country code
+  // matches a discovered number stored WITHOUT one (and vice-versa).
+  const phoneKey = (raw: string): string | null => {
+    const d = raw.replace(/\D/g, '');
+    return d.length >= 10 ? `phone:${d.slice(-10)}` : null;
+  };
+  if (seed.kind === 'phone') {
+    const k = phoneKey(seed.value);
+    if (k) add(k);
+  } else if (seed.kind === 'email') add(`email:${seed.value.toLowerCase()}`);
   else if (seed.kind === 'username') add(`user:${seed.value.toLowerCase().replace(/^@/, '')}`);
   else if (seed.kind === 'person') {
     const st = seed.hints ? (stateFromHint(seed.hints) ?? '') : '';
-    add(`name:${normName(seed.value)}|${st.toLowerCase()}`);
+    const n = normName(seed.value);
+    // Store under BOTH name+state and bare name, so a flag added with a city is
+    // still found by someone who searches the name without one.
+    add(`name:${n}|${st.toLowerCase()}`);
+    add(`name:${n}|`);
   }
 
   for (const p of extras?.phones ?? []) {
-    const d = p.replace(/\D/g, '');
-    if (d.length >= 10) add(`phone:${d.slice(-10)}`);
+    const k = phoneKey(p);
+    if (k) add(k);
   }
   for (const e of extras?.emails ?? []) add(`email:${e.toLowerCase()}`);
   for (const u of extras?.usernames ?? []) add(`user:${u.toLowerCase().replace(/^@/, '')}`);

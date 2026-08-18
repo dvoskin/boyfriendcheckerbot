@@ -808,12 +808,15 @@ async function main(): Promise<void> {
     }
     const already = last.unlocked?.has(key);
     if (!already) {
+      // Reserve the unlock BEFORE the async spend so a fast double-tap can't
+      // charge twice; release it if the spend actually fails.
+      last.unlocked?.add(key);
       if (!(await spend(ctx.from.id, section.cost))) {
+        last.unlocked?.delete(key);
         await ctx.answerCallbackQuery({ text: 'Not enough tokens — grab more 👇', show_alert: false }).catch(() => {});
         await earnMore(ctx);
         return;
       }
-      last.unlocked?.add(key);
     }
     await ctx.answerCallbackQuery(already ? 'Already unlocked 💛' : `Unlocked! −${section.cost} 🪙`).catch(() => {});
     for (const chunk of section.chunks) {
