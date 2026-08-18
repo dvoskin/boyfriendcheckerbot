@@ -208,6 +208,7 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   if (anyF((f) => f.source === 'finra' && /🔴/.test(f.title))) score -= 10;
   const relForScore = all.find((f) => f.source === 'enformion' && f.label === 'Relationship status')?.extra?.status;
   if (relForScore === 'married') score -= 30;
+  else if (relForScore === 'possibly') score -= 12;
   else if (relForScore === 'divorced') score -= 5;
   score -= dossier.signals.filter((s) => s.level === 'amber').length * 4;
   if (dossier.signals.some((s) => /thin or freshly/i.test(s.text))) score -= 8;
@@ -260,11 +261,12 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   )
     red.push('Court / criminal record on file');
   if (relStatus === 'married') red.push('💍 Marriage record — may NOT be single');
+  else if (relStatus === 'possibly') red.push('💍 Same-surname relative on file — possibly taken');
   if (anyF((f) => f.label === 'Synthetic media')) red.push('Photos may be AI-generated 🤖');
   if (anyF((f) => f.source === 'hibp' && /DATING|ADULT/i.test(f.title))) red.push('Account on a dating / adult site');
   if (anyF((f) => (f.source === 'ipqs' || f.source === 'emailrep') && /🔴/.test(f.title))) red.push('Email/phone looks risky (burner/fraud)');
 
-  if (hasDeep && relStatus !== 'married' && relStatus !== 'divorced') green.push('No marriage record — looks single 💚');
+  if (hasDeep && relStatus === 'single') green.push('No marriage record — looks single 💚');
   if (hasDeep) green.push('Identity matches public records ✅');
   if (confirmedAccts >= 2) green.push('Real, established online footprint');
   if (employer || occupation) green.push('Job / employer checks out 💼');
@@ -285,7 +287,14 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   if (age) facts.push(`🎂 <b>Age:</b> ${escapeHtml(age)}`);
   if (city) facts.push(`📍 <b>Lives:</b> ${escapeHtml(city)}`);
   if (relStatus) {
-    const rel = relStatus === 'married' ? '💍 Married — careful!' : relStatus === 'divorced' ? '💔 Divorced' : '💚 No marriage record (looks single)';
+    const rel =
+      relStatus === 'married'
+        ? '💍 Married — careful!'
+        : relStatus === 'possibly'
+          ? '💍 Possibly taken (same-surname relative on file)'
+          : relStatus === 'divorced'
+            ? '💔 Divorced'
+            : '💚 No marriage record (looks single)';
     facts.push(`💘 <b>Status:</b> ${rel}`);
   }
   if (employer || occupation) facts.push(`💼 <b>Works:</b> ${escapeHtml([occupation, employer].filter(Boolean).join(' @ '))}`);

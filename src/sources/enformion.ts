@@ -258,6 +258,21 @@ export function parseEnformionPerson(
     const relOf = (r: any) => str(get(r, 'Relationship', 'relationship', 'RelationshipType', 'relationshipType'));
     const spouse = relatives.find((r) => /spouse|wife|husband/i.test(relOf(r) ?? ''));
 
+    // Enformion often lists a spouse as a plain "relative" with no relationship
+    // label — but a same-surname adult is very likely a spouse (or sibling). When
+    // there's no formal marriage record, surface them so "is he married?" isn't
+    // silently wrong just because the marriage index didn't have the record.
+    const surname = (displayName.trim().split(/\s+/).pop() ?? '').toLowerCase().replace(/[^a-z]/g, '');
+    const sameSurnamePartner = spouse
+      ? nameOf(spouse)
+      : relatives
+          .map(nameOf)
+          .filter(Boolean)
+          .find((nm) => {
+            const l = (nm.trim().split(/\s+/).pop() ?? '').toLowerCase().replace(/[^a-z]/g, '');
+            return l && surname && l === surname && nm.toLowerCase() !== displayName.toLowerCase();
+          }) ?? '';
+
     // Parse the actual RECORD arrays Person Search returns (nationwide), not just
     // the yes/no indicator — this is the spouse name + date + place across states.
     const dateOf = (r: any) => str(get(r, 'MarriageDate', 'marriageDate', 'DivorceDate', 'divorceDate', 'Date', 'date', 'DateOfMarriage', 'FilingDate', 'filingDate'));
@@ -277,16 +292,20 @@ export function parseEnformionPerson(
       .map((d) => [spouseOf(d) && `💔 from ${spouseOf(d)}`, dateOf(d) && `on ${dateOf(d)}`, placeOf(d) && `in ${placeOf(d)}`].filter(Boolean).join(' '))
       .filter(Boolean);
 
-    // Married if any record OR indicator OR a spouse relative shows.
-    const marriedRec = marriageRecs.length > 0 || indHas('marriages', 'marriage', 'married') || Boolean(spouse);
+    // A formal marriage record OR an explicit spouse relative = married. A
+    // same-surname relative with no record = "possibly taken" (spouse or sibling).
+    const hardMarried = marriageRecs.length > 0 || indHas('marriages', 'marriage', 'married') || Boolean(spouse);
     const divorcedRec = divorceRecs.length > 0 || indHas('divorces', 'divorce', 'divorced');
-    const statusLine = marriedRec
+    const possiblyTaken = !hardMarried && Boolean(sameSurnamePartner);
+    const statusLine = hardMarried
       ? marriageLines.length
         ? `💍 Marriage record${marriageLines.length > 1 ? 's' : ''} found (${marriageLines.length})`
         : spouse
-          ? `💍 Marriage record found — possible spouse: ${nameOf(spouse)}`
+          ? `💍 Married — spouse on file: ${nameOf(spouse)}`
           : '💍 Marriage record on file'
-      : '💚 No marriage record surfaced';
+      : possiblyTaken
+        ? `💍 Possibly taken — ${sameSurnamePartner} shares their last name`
+        : '💚 No marriage record surfaced';
     findings.push({
       source: 'enformion',
       label: 'Relationship status',
@@ -294,14 +313,16 @@ export function parseEnformionPerson(
       detail: [
         ...marriageLines.slice(0, 4),
         ...(divorceLines.length ? divorceLines.slice(0, 4) : divorcedRec ? ['💔 Divorce record also on file'] : []),
-        !marriedRec && 'No public marriage record came up — this does NOT fully rule it out (records lag and vary by state).',
+        possiblyTaken &&
+          `⚠️ ${sameSurnamePartner} shows up as a relative with the SAME last name — could be a spouse (or a sibling/parent). No formal marriage record surfaced, so confirm it.`,
+        !hardMarried && !possiblyTaken && 'No public marriage record came up — this does NOT fully rule it out (records lag and vary by state).',
         'Public records aggregated nationwide — confirm before believing it.',
       ]
         .filter(Boolean)
         .join('\n'),
       retrievedAt: ctx.now,
-      confidence: marriageLines.length ? 0.7 : 0.55,
-      extra: { status: divorcedRec && !marriedRec ? 'divorced' : marriedRec ? 'married' : 'single' },
+      confidence: marriageLines.length ? 0.7 : possiblyTaken ? 0.5 : 0.55,
+      extra: { status: divorcedRec && !hardMarried && !possiblyTaken ? 'divorced' : hardMarried ? 'married' : possiblyTaken ? 'possibly' : 'single' },
     });
 
     if (relatives.length) {
