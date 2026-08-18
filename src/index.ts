@@ -12,7 +12,7 @@ import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
 import { recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
-import { applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, type RevealKey, spend, TOKENS } from './core/wallet.js';
+import { applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, isFree, type RevealKey, spend, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, synthesize } from './report.js';
@@ -508,6 +508,10 @@ async function main(): Promise<void> {
     return consented.has(uid) ? ctx.reply(HELP, withMenu) : ctx.reply(TERMS, { parse_mode: 'HTML' });
   });
   bot.command('help', (ctx) => ctx.reply(HELP, withMenu));
+  // Handy for the owner: shows your Telegram ID to put in UNLIMITED_USER_IDS.
+  bot.command('id', (ctx) =>
+    ctx.reply(`🪪 Your Telegram ID: <code>${ctx.from?.id}</code>`, { parse_mode: 'HTML' }),
+  );
   bot.command('check', (ctx) => (guard(ctx) ? ctx.reply('Who are we checking? Pick one 👇', withMenu) : undefined));
 
   const skipCityKb = new InlineKeyboard().text('⏭ Skip — no city', 'skipcity');
@@ -784,6 +788,12 @@ async function main(): Promise<void> {
 
   async function showBalance(ctx: Context): Promise<void> {
     const uid = ctx.from!.id;
+    if (isFree(uid)) {
+      await ctx.reply('💎 <b>Tokens: ∞ Unlimited</b>\n<i>Free mode — search and unlock everything, no limits. 💛</i>', {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
     const [bal, invited] = await Promise.all([balanceOf(uid), inviteCount(uid)]);
     await ctx.reply(
       [

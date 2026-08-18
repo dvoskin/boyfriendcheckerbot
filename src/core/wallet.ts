@@ -104,8 +104,14 @@ export async function balanceOf(id: number): Promise<number> {
   return (await getWallet(id)).balance;
 }
 
+/** True when this user never pays — metering off (testing) or an owner allowlist. */
+export function isFree(id: number): boolean {
+  return !config.tokenMetering || config.unlimitedUserIds.includes(id);
+}
+
 /** Try to spend; false if not enough (caller shows the "earn more" flow). */
 export async function spend(id: number, amount: number): Promise<boolean> {
+  if (isFree(id)) return true; // free while testing / owner allowlist — never deduct
   const w = await getWallet(id);
   if (w.balance < amount) return false;
   w.balance -= amount;

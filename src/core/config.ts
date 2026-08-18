@@ -63,6 +63,16 @@ export const config = {
     .map((s) => s.trim())
     .filter(Boolean)
     .map(Number),
+  // Token metering (the paywall) is OFF by default so testing is free. Flip it on
+  // at launch with TOKEN_METERING=on (or =true).
+  tokenMetering: /^(on|true|1|yes)$/i.test(process.env.TOKEN_METERING ?? ''),
+  // These Telegram user IDs are ALWAYS free, even once metering is on — the owner
+  // testing the bot. Comma-separated. Find your id by sending the bot /id.
+  unlimitedUserIds: (process.env.UNLIMITED_USER_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(Number),
 };
 
 /**
