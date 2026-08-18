@@ -10,14 +10,14 @@ import { reverseImageSearch } from './media/reverse.js';
 import { analyzeScreenshot, type ImageMime } from './media/screenshot.js';
 import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
-import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, recentFlags, subjectKeys } from './core/flags.js';
-import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
-import { hasOptedIn, optIn } from './core/match.js';
-import { dbStats, getCachedSearch, logEvent, saveSearch, upsertPeople } from './core/db.js';
-import { badgeFor, claimProfile, myProfile, setBadgePaid, verifiedOwnerFor } from './core/profiles.js';
-import { addTokens, applyReferral, balanceOf, claimCharge, claimDaily, COST, grantStarter, GUARDIAN_FAIR_USE, GUARDIAN_STARS, inviteCount, isFree, isGuardian, refund, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
+import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, recentFlags, removeFlagsBy, removeFlagsForKeys, subjectKeys } from './core/flags.js';
+import { checkStats, recordSearch, removeSearcher, removeSearchKeys, searchersOf } from './core/searchers.js';
+import { hasOptedIn, optIn, removeFromMatch } from './core/match.js';
+import { dbStats, getCachedSearch, isSuppressed, logEvent, purgeSubject, purgeUserEvents, saveSearch, suppressKeys, upsertPeople } from './core/db.js';
+import { badgeFor, claimProfile, deleteProfile, myProfile, setBadgePaid, verifiedOwnerFor } from './core/profiles.js';
+import { addTokens, applyReferral, balanceOf, claimCharge, claimDaily, COST, deleteWallet, grantStarter, GUARDIAN_FAIR_USE, GUARDIAN_STARS, inviteCount, isFree, isGuardian, refund, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
-import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
+import { addWatch, allWatches, listWatches, removeAllWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { chunkText, escapeHtml, type LockedSection, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
 import { renderCardPng } from './media/card.js';
 import { generateDateQuestions } from './core/predate.js';
@@ -72,6 +72,9 @@ const pendingScam = new Set<number>();
 /** Users checking THEMSELVES — their next message is their own name/number. */
 const pendingSelfCheck = new Set<number>();
 
+/** Users opting a person OUT — their next message is the identifier to purge/suppress. */
+const pendingOptout = new Set<number>();
+
 /** Users in the AI safety-bestie chat: every message goes to the coach until they leave. */
 const pendingChat = new Set<number>();
 const chatHistory = new Map<number, ChatTurn[]>();
@@ -105,6 +108,7 @@ function resetTextModes(uid: number): void {
   pendingPick.delete(uid);
   pendingChat.delete(uid);
   pendingSelfCheck.delete(uid);
+  pendingOptout.delete(uid);
 }
 
 /** Stars price (⭐) for 30 days of the ✅ Verified badge — the second-audience revenue. */
@@ -396,6 +400,11 @@ const TRACE_STEPS = [
  * never has to learn a command — sending "@johndoe" just works.
  */
 async function runTrace(ctx: Context, seed: Subject): Promise<void> {
+  // Honor opt-outs: if this person asked to be removed, don't search or charge.
+  if (isSuppressed(subjectKeys(seed))) {
+    await ctx.reply('🛡️ <b>This person has opted out of Checkmate</b>, so their info isn’t available here. (No tokens spent.)', { parse_mode: 'HTML' });
+    return;
+  }
   // Meter the search against the token wallet — the scarcity that drives the
   // daily-return + referral + purchase loops.
   const cost = COST[seed.kind as keyof typeof COST] ?? 10;
@@ -655,6 +664,45 @@ async function main(): Promise<void> {
   bot.command('id', (ctx) =>
     ctx.reply(`🪪 Your Telegram ID: <code>${ctx.from?.id}</code>`, { parse_mode: 'HTML' }),
   );
+
+  // ── Right to erasure: delete MY data ─────────────────────────────────────
+  bot.command('deleteme', (ctx) => {
+    if (!ctx.from) return;
+    return ctx.reply(
+      '⚠️ <b>Delete everything?</b>\nThis permanently erases all your Checkmate data — tokens, your profile, watches, flags you made, and your history. It <b>cannot be undone</b>.',
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🗑️ Yes, delete it all', 'confirmdelete').text('↩️ Keep my data', 'check:new') },
+    );
+  });
+  bot.callbackQuery('confirmdelete', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    const uid = ctx.from.id;
+    await Promise.allSettled([
+      deleteWallet(uid),
+      deleteProfile(uid),
+      removeAllWatches(uid),
+      removeFlagsBy(uid),
+      removeSearcher(uid),
+      removeFromMatch(uid),
+    ]);
+    purgeUserEvents(uid);
+    chatHistory.delete(uid);
+    lastSearched.delete(uid);
+    resetTextModes(uid);
+    consented.delete(uid);
+    await saveConsent().catch(() => {});
+    await ctx.reply('✅ <b>Done — everything about you is erased.</b> 💛\nSend /start if you ever want to come back.', { parse_mode: 'HTML' });
+  });
+
+  // ── Right to erasure: opt a PERSON out (data-broker deletion obligation) ──
+  bot.command('optout', (ctx) => {
+    if (!guard(ctx)) return;
+    resetTextModes(ctx.from!.id);
+    pendingOptout.add(ctx.from!.id);
+    return ctx.reply(
+      '🛡️ <b>Remove someone from Checkmate</b>\nSend the <b>name, phone, or email</b> you want removed. We’ll purge it from our records and block it from future lookups.\n<i>/cancel to back out.</i>',
+      { parse_mode: 'HTML' },
+    );
+  });
 
   // Owner: the growing database at a glance.
   bot.command('stats', (ctx) => {
@@ -1866,6 +1914,22 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Opt a person out → REAL purge + suppress (no fake "remove" button).
+    if (pendingOptout.has(uid) && !text.startsWith('/')) {
+      pendingOptout.delete(uid);
+      const oSeed = detectSubject(text);
+      const oKeys = subjectKeys(oSeed);
+      suppressKeys(oKeys);
+      purgeSubject(oKeys, [oSeed.value]);
+      await Promise.allSettled([removeFlagsForKeys(oKeys), removeSearchKeys(oKeys)]);
+      logEvent(uid, 'optout');
+      await ctx.reply(
+        '✅ <b>Removed.</b> That person’s records were purged from Checkmate and blocked from future lookups. 🛡️',
+        { parse_mode: 'HTML', reply_markup: mainMenu },
+      );
+      return;
+    }
+
     // "Check yourself" → community-flag lookup on the user's own identifier.
     if (pendingSelfCheck.has(uid) && !text.startsWith('/')) {
       pendingSelfCheck.delete(uid);
@@ -2108,6 +2172,8 @@ async function main(): Promise<void> {
       { command: 'daily', description: '🎁 Free daily tokens + tip' },
       { command: 'invite', description: '👯 Invite friends, earn tokens' },
       { command: 'guardian', description: '👑 Go unlimited (Guardian)' },
+      { command: 'optout', description: '🛡️ Remove someone from Checkmate' },
+      { command: 'deleteme', description: '🗑️ Delete all my data' },
       { command: 'help', description: '💛 How to use Checkmate' },
     ]);
   } catch {

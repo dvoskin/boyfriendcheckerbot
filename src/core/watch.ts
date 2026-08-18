@@ -77,6 +77,14 @@ export async function listWatches(userId: number): Promise<Watch[]> {
   return watches.filter((w) => w.userId === userId);
 }
 
+/** Remove every watch a user set (their own-data deletion). */
+export async function removeAllWatches(userId: number): Promise<void> {
+  await ensureLoaded();
+  const before = watches.length;
+  watches = watches.filter((w) => w.userId !== userId);
+  if (watches.length !== before) await persist();
+}
+
 export async function allWatches(): Promise<Watch[]> {
   await ensureLoaded();
   return [...watches];

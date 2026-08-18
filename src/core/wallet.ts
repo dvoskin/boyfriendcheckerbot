@@ -262,3 +262,12 @@ export async function applyReferral(newUserId: number, referrerId: number): Prom
 export async function inviteCount(id: number): Promise<number> {
   return (await getWallet(id)).invited.length;
 }
+
+/** Permanently delete this user's wallet (self-deletion / right to erasure). */
+export async function deleteWallet(id: number): Promise<void> {
+  await ensureLoaded();
+  if (wallets[String(id)]) {
+    delete wallets[String(id)];
+    await persist();
+  }
+}

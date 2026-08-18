@@ -44,6 +44,32 @@ export async function recordSearch(user: number, keys: string[]): Promise<void> 
   await persist();
 }
 
+/** Forget every search a given user made (their own-data deletion). */
+export async function removeSearcher(user: number): Promise<void> {
+  await ensureLoaded();
+  let changed = false;
+  for (const k of Object.keys(index)) {
+    const next = index[k]!.filter((r) => r.user !== user);
+    if (next.length !== index[k]!.length) {
+      changed = true;
+      if (next.length) index[k] = next;
+      else delete index[k];
+    }
+  }
+  if (changed) await persist();
+}
+
+/** Forget searches recorded under a subject's keys (subject opt-out). */
+export async function removeSearchKeys(keys: string[]): Promise<void> {
+  await ensureLoaded();
+  let changed = false;
+  for (const k of keys) if (index[k]) {
+    delete index[k];
+    changed = true;
+  }
+  if (changed) await persist();
+}
+
 /** Distinct users who searched any of these keys, minus the excluded user. */
 export async function searchersOf(keys: string[], exclude?: number): Promise<number[]> {
   await ensureLoaded();

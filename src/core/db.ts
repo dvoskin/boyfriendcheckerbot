@@ -33,6 +33,7 @@ try {
     );
     CREATE INDEX IF NOT EXISTS idx_events_uid ON events(uid);
     CREATE INDEX IF NOT EXISTS idx_people_value ON people(value);
+    CREATE TABLE IF NOT EXISTS suppressed (key TEXT PRIMARY KEY, at INTEGER);
   `);
 } catch (err) {
   console.error('SQLite unavailable — running without the DB layer:', err);
@@ -105,6 +106,56 @@ export function logEvent(uid: number, type: string, detail = ''): void {
   if (!db) return;
   try {
     db.prepare('INSERT INTO events (uid, type, detail, at) VALUES (?, ?, ?, ?)').run(uid, type, detail, Date.now());
+  } catch {
+    /* non-fatal */
+  }
+}
+
+// ── Opt-out / deletion (CCPA / Delete Act compliance — REAL deletes) ─────────
+/** Suppress these identity keys: block future storage/display for the subject. */
+export function suppressKeys(keys: string[]): void {
+  if (!db || keys.length === 0) return;
+  try {
+    const now = Date.now();
+    const stmt = db.prepare('INSERT OR IGNORE INTO suppressed (key, at) VALUES (?, ?)');
+    const tx = db.transaction((ks: string[]) => ks.forEach((k) => stmt.run(k, now)));
+    tx(keys);
+  } catch (err) {
+    console.error('suppressKeys failed:', err);
+  }
+}
+
+/** Has any of these keys opted out? Checked before we store or show a profile. */
+export function isSuppressed(keys: string[]): boolean {
+  if (!db || keys.length === 0) return false;
+  try {
+    const q = `SELECT 1 FROM suppressed WHERE key IN (${keys.map(() => '?').join(',')}) LIMIT 1`;
+    return Boolean(db.prepare(q).get(...keys));
+  } catch {
+    return false;
+  }
+}
+
+/** Purge a subject from the people-index and any cached searches mentioning them. */
+export function purgeSubject(keys: string[], values: string[]): void {
+  if (!db) return;
+  try {
+    if (keys.length) {
+      db.prepare(`DELETE FROM people WHERE id IN (${keys.map(() => '?').join(',')})`).run(...keys);
+    }
+    // Cached search keys look like "kind:value:hints" — drop any that contain a value.
+    const del = db.prepare('DELETE FROM search_cache WHERE key LIKE ?');
+    for (const v of values) if (v && v.length >= 3) del.run(`%${v.toLowerCase()}%`);
+  } catch (err) {
+    console.error('purgeSubject failed:', err);
+  }
+}
+
+/** Delete all analytics events for a user (their own-data deletion). */
+export function purgeUserEvents(uid: number): void {
+  if (!db) return;
+  try {
+    db.prepare('DELETE FROM events WHERE uid = ?').run(uid);
   } catch {
     /* non-fatal */
   }

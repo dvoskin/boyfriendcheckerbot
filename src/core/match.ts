@@ -47,6 +47,21 @@ export async function optIn(user: number, keys: string[]): Promise<number[]> {
   return [...others];
 }
 
+/** Remove a user from the whole match network (their own-data deletion). */
+export async function removeFromMatch(user: number): Promise<void> {
+  await ensureLoaded();
+  let changed = false;
+  for (const k of Object.keys(store)) {
+    const next = store[k]!.filter((o) => o.user !== user);
+    if (next.length !== store[k]!.length) {
+      changed = true;
+      if (next.length) store[k] = next;
+      else delete store[k];
+    }
+  }
+  if (changed) await persist();
+}
+
 /** Has this user already opted into the network for this person? */
 export async function hasOptedIn(user: number, keys: string[]): Promise<boolean> {
   await ensureLoaded();

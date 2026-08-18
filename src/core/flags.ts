@@ -123,6 +123,23 @@ export async function recentFlags(limit = 20): Promise<WallItem[]> {
     .slice(0, limit);
 }
 
+/** Remove all flags/labels a user created (their own-data deletion). */
+export async function removeFlagsBy(by: number): Promise<void> {
+  await ensureLoaded();
+  const before = flags.length;
+  flags = flags.filter((f) => f.by !== by);
+  if (flags.length !== before) await persist();
+}
+
+/** Remove all flags/labels ABOUT a person (subject opt-out), matched by keys. */
+export async function removeFlagsForKeys(keys: string[]): Promise<void> {
+  await ensureLoaded();
+  const keySet = new Set(keys);
+  const before = flags.length;
+  flags = flags.filter((f) => !f.keys.some((k) => keySet.has(k)));
+  if (flags.length !== before) await persist();
+}
+
 export async function addFlag(by: number, keys: string[], category: FlagCategory): Promise<void> {
   if (keys.length === 0) return;
   await ensureLoaded();

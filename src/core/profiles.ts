@@ -80,6 +80,14 @@ export async function badgeFor(keys: string[]): Promise<Badge | null> {
   };
 }
 
+/** Permanently delete this user's claimed profile. */
+export async function deleteProfile(user: number): Promise<void> {
+  await ensureLoaded();
+  const before = profiles.length;
+  profiles = profiles.filter((p) => p.user !== user);
+  if (profiles.length !== before) await persist();
+}
+
 /** This user's own profile, if they've claimed one. */
 export async function myProfile(user: number): Promise<Profile | null> {
   await ensureLoaded();
