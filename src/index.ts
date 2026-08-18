@@ -14,7 +14,7 @@ import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, recentF
 import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
 import { badgeFor, claimProfile, myProfile, setBadgePaid, verifiedOwnerFor } from './core/profiles.js';
-import { addTokens, applyReferral, balanceOf, claimCharge, claimDaily, COST, grantStarter, GUARDIAN_STARS, inviteCount, isFree, isGuardian, refund, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
+import { addTokens, applyReferral, balanceOf, claimCharge, claimDaily, COST, grantStarter, GUARDIAN_FAIR_USE, GUARDIAN_STARS, inviteCount, isFree, isGuardian, refund, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { chunkText, escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
@@ -1318,7 +1318,16 @@ async function main(): Promise<void> {
         { subscription_period: 2592000 }, // 30 days — the only period Telegram allows
       );
       await ctx.reply(
-        ['👑 <b>Checkmate Guardian</b>', '', '✅ Unlimited checks & unlocks', '🔔 Ongoing monitoring alerts', '⚡ Priority', '', `<b>${GUARDIAN_STARS}⭐ / month</b> — cancel anytime.`].join('\n'),
+        [
+          '👑 <b>Checkmate Guardian</b>',
+          '',
+          '✅ Unlimited checks & unlocks',
+          '🔔 Ongoing monitoring alerts',
+          '⚡ Priority',
+          '',
+          `<b>${GUARDIAN_STARS}⭐ / month</b> — cancel anytime.`,
+          `<i>Fair use: up to ${GUARDIAN_FAIR_USE} checks/month — plenty for real dating, and it keeps the bot sustainable.</i>`,
+        ].join('\n'),
         { parse_mode: 'HTML', reply_markup: new InlineKeyboard().url('👑 Subscribe', link) },
       );
     } catch (err) {

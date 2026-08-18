@@ -76,12 +76,16 @@ interface Wallet {
   referredBy?: number;
   invited: number[]; // user ids who joined via this user
   guardianUntil?: string; // ISO — active "Guardian" subscription (unlimited checks)
+  guardianMonth?: string; // YYYY-MM window for the fair-use counter
+  guardianUsed?: number; // checks used by a Guardian this month (fair-use guard)
   refDay?: string; // YYYY-MM-DD of the current referral-reward window
   refCount?: number; // referrer rewards granted in that window
 }
 
 /** Stars price for the Guardian monthly subscription (unlimited + monitoring). */
 export const GUARDIAN_STARS = 599;
+/** Fair-use ceiling on Guardian checks per month — stops scripted abuse running us negative. */
+export const GUARDIAN_FAIR_USE = 40;
 
 const FILE = () => join(config.dataDir, 'wallets.json');
 let wallets: Record<string, Wallet> = {};
@@ -148,7 +152,21 @@ export async function setGuardian(id: number, days = 30): Promise<void> {
 export async function spend(id: number, amount: number): Promise<boolean> {
   if (isFree(id)) return true; // free while testing / owner allowlist — never deduct
   const w = await getWallet(id);
-  if (w.guardianUntil && Date.parse(w.guardianUntil) > Date.now()) return true; // unlimited
+  // Guardian = unlimited up to a monthly fair-use ceiling; past that they use
+  // tokens like anyone else (protects margin from scripted abuse, not real users).
+  if (w.guardianUntil && Date.parse(w.guardianUntil) > Date.now()) {
+    const month = new Date().toISOString().slice(0, 7);
+    if (w.guardianMonth !== month) {
+      w.guardianMonth = month;
+      w.guardianUsed = 0;
+    }
+    if ((w.guardianUsed ?? 0) < GUARDIAN_FAIR_USE) {
+      w.guardianUsed = (w.guardianUsed ?? 0) + 1;
+      await persist();
+      return true;
+    }
+    // hit fair use — fall through to the normal token path.
+  }
   if (w.balance < amount) return false;
   w.balance -= amount;
   await persist();
