@@ -22,6 +22,7 @@ import { chunkText, escapeHtml, type LockedSection, renderFindings, renderGraph,
 import { renderCardPng } from './media/card.js';
 import { generateDateQuestions } from './core/predate.js';
 import { QUIZ, quizAt, randomQuizIndex, randomTip, tipOfDay } from './core/content.js';
+import { type ChatTurn, coachReply } from './core/coach.js';
 import { analyzeScamText } from './core/scamtext.js';
 import { type Candidate, enformionCandidates, enformionSource } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
@@ -68,6 +69,12 @@ const pendingVerify = new Set<number>();
 /** Users who tapped "Is this a scam?" — their next message is the text to judge. */
 const pendingScam = new Set<number>();
 
+/** Users in the AI safety-bestie chat: every message goes to the coach until they leave. */
+const pendingChat = new Set<number>();
+const chatHistory = new Map<number, ChatTurn[]>();
+const chatCount = new Map<number, { day: string; n: number }>(); // cheap daily cap to bound cost
+const CHAT_DAILY_CAP = 40;
+
 /**
  * Who each user is allowed to anonymously relay to — populated ONLY when a real
  * "same person" match happens. Never trust the id from callback data (that would
@@ -93,6 +100,7 @@ function resetTextModes(uid: number): void {
   pendingVerify.delete(uid);
   pendingScam.delete(uid);
   pendingPick.delete(uid);
+  pendingChat.delete(uid);
 }
 
 /** Stars price (⭐) for 30 days of the ✅ Verified badge — the second-audience revenue. */
@@ -132,7 +140,10 @@ const mainMenu = new InlineKeyboard()
   .text('📸 Photo', 'ask:image')
   .text('🧠 Read a screenshot', 'ask:screenshot')
   .row()
+  .text('💬 Talk to me', 'chat')
   .text('🕵️ Is this a scam?', 'scamcheck')
+  .row()
+  .text('💅 Daily tip', 'tip')
   .text('🧱 Red-flag wall', 'wall')
   .row()
   .text('✅ Verify yourself', 'verifyme')
@@ -797,6 +808,31 @@ async function main(): Promise<void> {
       reply_markup: new InlineKeyboard().text('🚩 Red flag', `quizans:${i}:red`).text('✅ Totally fine', `quizans:${i}:fine`),
     });
   }
+  // ── AI safety-bestie chat (the retention lever) ──────────────────────────
+  const enterChat = async (ctx: Context): Promise<void> => {
+    resetTextModes(ctx.from!.id);
+    pendingChat.add(ctx.from!.id);
+    await ctx.reply(
+      '💬 <b>Talk to me.</b> What’s going on with them? Vent, ask if something’s a red flag, or paste what they said — I’ve got you.\n<i>(Tap 🚪 Done or send /done when you’re finished.)</i>',
+      { parse_mode: 'HTML' },
+    );
+  };
+  bot.command('chat', (ctx) => (guard(ctx) ? enterChat(ctx) : undefined));
+  bot.callbackQuery('chat', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await enterChat(ctx);
+  });
+  const leaveChat = async (ctx: Context): Promise<void> => {
+    pendingChat.delete(ctx.from!.id);
+    chatHistory.delete(ctx.from!.id);
+    await ctx.reply('💛 Anytime. I’m here whenever you need me.', { reply_markup: mainMenu });
+  };
+  bot.command('done', (ctx) => (guard(ctx) ? leaveChat(ctx) : undefined));
+  bot.callbackQuery('chatdone', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await leaveChat(ctx);
+  });
+
   bot.command('quiz', (ctx) => (guard(ctx) ? sendQuiz(ctx) : undefined));
   bot.callbackQuery('quiz', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
@@ -1334,10 +1370,11 @@ async function main(): Promise<void> {
         : r.streak % 3 === 0
           ? `🔥 <b>${r.streak}-day streak!</b> Bonus tokens added!`
           : `🔥 <b>${r.streak}-day streak</b> — keep it going!`;
-    await ctx.reply([`🎁 <b>+${r.gained} tokens!</b>`, streakLine, `💎 Balance: ${r.balance}`].join('\n'), {
-      parse_mode: 'HTML',
-      reply_markup: mainMenu,
-    });
+    // Bundle the red flag of the day into the reward — reinforces the daily habit.
+    await ctx.reply(
+      [`🎁 <b>+${r.gained} tokens!</b>`, streakLine, `💎 Balance: ${r.balance}`, '', '— — —', '', `💅 <b>Red flag of the day</b>`, tipOfDay()].join('\n'),
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🎮 Play the quiz (+3)', 'quiz').row().text('🔍 Check someone', 'check:new') },
+    );
   }
 
   async function doInvite(ctx: Context): Promise<void> {
@@ -1809,6 +1846,36 @@ async function main(): Promise<void> {
       return;
     }
 
+    // In the AI safety-bestie chat → every message goes to the coach.
+    if (pendingChat.has(uid) && !text.startsWith('/')) {
+      const today = new Date().toISOString().slice(0, 10);
+      const c = chatCount.get(uid);
+      const n = c?.day === today ? c.n : 0;
+      if (n >= CHAT_DAILY_CAP) {
+        await ctx.reply('💛 We’ve chatted a lot today — let’s pick it up tomorrow. Want me to run an actual check in the meantime? 👇', {
+          reply_markup: new InlineKeyboard().text('🔍 Check someone', 'check:new'),
+        });
+        return;
+      }
+      chatCount.set(uid, { day: today, n: n + 1 });
+      const hist = chatHistory.get(uid) ?? [];
+      hist.push({ role: 'user', content: text.slice(0, 1200) });
+      await ctx.api.sendChatAction(ctx.chat.id, 'typing').catch(() => {});
+      const reply = await coachReply(hist).catch(() => null);
+      if (!reply) {
+        hist.pop();
+        await ctx.reply('😬 Brain glitch — say that again?');
+        return;
+      }
+      hist.push({ role: 'assistant', content: reply });
+      chatHistory.set(uid, hist.slice(-16)); // keep the last ~8 turns
+      logEvent(uid, 'chat');
+      await ctx.reply(reply, {
+        reply_markup: new InlineKeyboard().text('🔍 Check them', 'check:new').text('🚪 Done', 'chatdone'),
+      });
+      return;
+    }
+
     // Composing an anonymous note to a matched user → relay it, reveal nothing.
     if (pendingRelay.has(uid) && !text.startsWith('/')) {
       const target = pendingRelay.get(uid)!;
@@ -1958,14 +2025,16 @@ async function main(): Promise<void> {
     if (me.username) botUsername = me.username;
     await bot.api.setMyCommands([
       { command: 'check', description: '🔍 Check someone new' },
+      { command: 'chat', description: '💬 Talk to your safety bestie' },
       { command: 'scam', description: '🕵️ Is this message a scam?' },
+      { command: 'tip', description: '💅 Red flag of the day' },
+      { command: 'quiz', description: '🎮 Red flag or fine?' },
       { command: 'verify', description: '✅ Verify your own profile' },
       { command: 'wall', description: '🧱 Wall of red flags' },
       { command: 'balance', description: '💎 Your tokens' },
-      { command: 'daily', description: '🎁 Claim free daily tokens' },
+      { command: 'daily', description: '🎁 Free daily tokens + tip' },
       { command: 'invite', description: '👯 Invite friends, earn tokens' },
       { command: 'guardian', description: '👑 Go unlimited (Guardian)' },
-      { command: 'watchlist', description: '👀 People you’re watching' },
       { command: 'help', description: '💛 How to use Checkmate' },
     ]);
   } catch {
