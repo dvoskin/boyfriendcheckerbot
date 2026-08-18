@@ -90,3 +90,12 @@ export async function myProfile(user: number): Promise<Profile | null> {
   await ensureLoaded();
   return profiles.find((p) => p.user === user) ?? null;
 }
+
+/** The Telegram id of whoever claimed a profile matching these keys (for "you were checked" alerts). Verified badges only. */
+export async function verifiedOwnerFor(keys: string[]): Promise<number | null> {
+  if (keys.length === 0) return null;
+  await ensureLoaded();
+  const set = new Set(keys);
+  const p = profiles.find((x) => x.keys.some((k) => set.has(k)) && x.paidUntil && Date.parse(x.paidUntil) > Date.now());
+  return p?.user ?? null;
+}

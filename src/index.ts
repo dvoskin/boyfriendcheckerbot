@@ -13,12 +13,13 @@ import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
 import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
-import { badgeFor, claimProfile, myProfile, setBadgePaid } from './core/profiles.js';
+import { badgeFor, claimProfile, myProfile, setBadgePaid, verifiedOwnerFor } from './core/profiles.js';
 import { addTokens, applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, isFree, type RevealKey, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
 import { renderCardPng } from './media/card.js';
+import { generateDateQuestions } from './core/predate.js';
 import { type Candidate, enformionCandidates } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
@@ -35,7 +36,7 @@ const pendingCity = new Map<number, string>();
 /** The last person each user searched — so a "🚩 Flag" tap knows who to flag. */
 const lastSearched = new Map<
   number,
-  { seed: Subject; keys: string[]; locked?: LockedSection[]; unlocked?: Set<RevealKey>; summary?: ReportSummary }
+  { seed: Subject; keys: string[]; locked?: LockedSection[]; unlocked?: Set<RevealKey>; summary?: ReportSummary; narrative?: string }
 >();
 
 /** Users we asked "how do you know them?" — their next message is the label. */
@@ -373,6 +374,18 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
       );
     }
 
+    // If the person being checked is a Verified badge-holder, ping THEM: "someone
+    // checked you" — Truecaller's dopamine loop, and what makes the badge worth
+    // paying for. Anonymous: never who checked them.
+    const owner = await verifiedOwnerFor(keys).catch(() => null);
+    if (owner && owner !== ctx.from!.id) {
+      await ctx.api
+        .sendMessage(owner, '👀 <b>Someone just checked you on Checkmate.</b>\nYour ✅ Verified badge showed them you’re real and up-front. 💛', {
+          parse_mode: 'HTML',
+        })
+        .catch(() => {});
+    }
+
     // Remember this user checked this person, so we can ping them if the person
     // is later flagged by the community — the pull-back loop.
     await recordSearch(ctx.from!.id, keys).catch(() => {});
@@ -430,7 +443,7 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     for (const chunk of parts.free) {
       await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
     }
-    lastSearched.set(ctx.from!.id, { seed, keys, locked: parts.locked, unlocked: new Set(), summary: parts.summary });
+    lastSearched.set(ctx.from!.id, { seed, keys, locked: parts.locked, unlocked: new Set(), summary: parts.summary, narrative: dossier.narrative ?? undefined });
 
     // The money engine: offer each juicy section as a one-tap token unlock.
     if (!parts.thin && parts.locked.length) {
@@ -458,8 +471,9 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     if (missing.email || missing.phone) actions.row();
     actions
       .text('🖼️ Share card', 'sharecard')
-      .text('🚩 Flag them', 'flag')
+      .text('🎤 Questions to ask them', 'datequestions')
       .row()
+      .text('🚩 Flag them', 'flag')
       .text('🏷️ How you know them', 'label')
       .row()
       .text('🤝 Are we dating the same person?', 'samematch')
@@ -893,6 +907,31 @@ async function main(): Promise<void> {
       .catch(async () => {
         await ctx.reply('😬 Couldn’t open the payment sheet — try again in a moment.');
       });
+  });
+
+  // "🎤 Questions to ask them" → AI-generated verification questions for the date.
+  bot.callbackQuery('datequestions', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const last = lastSearched.get(ctx.from.id);
+    if (!last) {
+      await ctx.reply('Check someone first, then tap 🎤 for questions to ask them.');
+      return;
+    }
+    if (!(await spend(ctx.from.id, COST.username))) {
+      await earnMore(ctx);
+      return;
+    }
+    const note = await ctx.reply('🎤 Writing your date-night questions…');
+    const ctxStr = [last.narrative, last.summary && `Verdict: ${last.summary.verdict}`].filter(Boolean).join('\n');
+    const qs = await generateDateQuestions(ctxStr).catch(() => null);
+    await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+    await ctx.reply(
+      qs
+        ? `🎤 <b>What to ask on the date</b>\n<i>Slip these in casually — you’ll know fast if their story holds up.</i>\n\n${escapeHtml(qs)}`
+        : '😬 Couldn’t generate those right now — try again in a moment.',
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔍 Check someone else', 'check:new') },
+    );
   });
 
   // "🔍 Check someone else" → straight back to the main menu, no typing.
