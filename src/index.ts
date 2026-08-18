@@ -13,6 +13,7 @@ import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, recentFlags, subjectKeys } from './core/flags.js';
 import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
+import { dbStats, getCachedSearch, logEvent, saveSearch, upsertPeople } from './core/db.js';
 import { badgeFor, claimProfile, myProfile, setBadgePaid, verifiedOwnerFor } from './core/profiles.js';
 import { addTokens, applyReferral, balanceOf, claimCharge, claimDaily, COST, grantStarter, GUARDIAN_FAIR_USE, GUARDIAN_STARS, inviteCount, isFree, isGuardian, refund, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
@@ -397,8 +398,20 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
   }, 2500);
 
   try {
-    const graph = await buildGraph(ALL_SOURCES, seed, { maxDepth: 2, maxNodes: 18 });
-    const dossier = await writeDossier(graph).catch(() => ({ signals: [], narrative: null, identityCount: 0, names: [] }));
+    // Serve from the DB cache when we've searched this exact person recently — the
+    // result is instant AND free (no paid API calls). Rebuild + cache otherwise.
+    const cacheKey = `${seed.kind}:${seed.value.toLowerCase().trim()}:${(seed.hints ?? '').toLowerCase().trim()}`;
+    const cached = getCachedSearch(cacheKey, 14 * 24 * 60 * 60 * 1000); // 14-day freshness
+    let graph: Awaited<ReturnType<typeof buildGraph>>;
+    let dossier: Awaited<ReturnType<typeof writeDossier>>;
+    if (cached) {
+      graph = cached.graph as typeof graph;
+      dossier = cached.dossier as typeof dossier;
+    } else {
+      graph = await buildGraph(ALL_SOURCES, seed, { maxDepth: 2, maxNodes: 18 });
+      dossier = await writeDossier(graph).catch(() => ({ signals: [], narrative: null, identityCount: 0, names: [] }));
+      saveSearch(cacheKey, graph, dossier); // grow the moat + save future API $
+    }
 
     clearInterval(tick);
     await ctx.api.deleteMessage(status.chat.id, status.message_id).catch(() => {});
@@ -445,6 +458,9 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     // Remember this user checked this person, so we can ping them if the person
     // is later flagged by the community — the pull-back loop.
     await recordSearch(ctx.from!.id, keys).catch(() => {});
+    // Grow the people-index (the moat) and log the search event (analytics).
+    upsertPeople(keys.map((k) => ({ id: k, kind: seed.kind, value: seed.value })));
+    logEvent(ctx.from!.id, cached ? 'search_cached' : 'search', seed.kind);
     const flagSummary = await lookupFlags(keys).catch(() => ({ total: 0, byCategory: [], labels: [] }));
     if (flagSummary.total > 0) {
       const lines = [
@@ -623,6 +639,23 @@ async function main(): Promise<void> {
   bot.command('id', (ctx) =>
     ctx.reply(`🪪 Your Telegram ID: <code>${ctx.from?.id}</code>`, { parse_mode: 'HTML' }),
   );
+
+  // Owner: the growing database at a glance.
+  bot.command('stats', (ctx) => {
+    const s = dbStats();
+    if (!s) return ctx.reply('📊 DB not available.');
+    return ctx.reply(
+      [
+        '📊 <b>Checkmate database</b>',
+        '',
+        `🧑 People indexed: <b>${s.people.toLocaleString()}</b>`,
+        `💾 Searches cached: <b>${s.cached.toLocaleString()}</b> <i>(served free on repeat)</i>`,
+        `📈 Events logged: <b>${s.events.toLocaleString()}</b>`,
+        `👥 Users active: <b>${s.users.toLocaleString()}</b>`,
+      ].join('\n'),
+      { parse_mode: 'HTML' },
+    );
+  });
 
   // Owner diagnostics: which data providers are actually connected. This is what
   // answers "why isn't marriage/criminal showing?" — the paid people-data
