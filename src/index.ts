@@ -631,6 +631,31 @@ async function main(): Promise<void> {
     ctx.reply(`🪪 Your Telegram ID: <code>${ctx.from?.id}</code>`, { parse_mode: 'HTML' }),
   );
 
+  // Owner diagnostics: which data providers are actually connected. This is what
+  // answers "why isn't marriage/criminal showing?" — the paid people-data
+  // sources need API keys set on the server.
+  bot.command('diag', (ctx) => {
+    const on = (v: unknown) => (v ? '✅' : '❌');
+    const lines = [
+      '🔌 <b>Connected data sources</b>',
+      '',
+      `${on(config.enformionName && config.enformionPassword)} <b>Enformion</b> — marriage, relatives, age, city, relationship, phones/emails, criminal indicator  <i>(THE source for "is he married")</i>`,
+      `${on(config.uniCourtClientId && config.uniCourtClientSecret)} <b>UniCourt</b> — real criminal & court records`,
+      `${on(config.spokeoKey)} <b>Spokeo</b> — extra people data (relatives/addresses)`,
+      `${on(config.twilioSid && config.twilioToken)} <b>Twilio</b> — phone → registered name / line type`,
+      `${on(config.hibpKey)} <b>HaveIBeenPwned</b> — email breaches / hidden accounts`,
+      `${on(config.brightDataKey)} <b>Bright Data</b> — public Instagram/TikTok profiles`,
+      `${on(config.ipqsKey)} <b>IPQualityScore</b> — phone/email fraud & burner check`,
+      `${on(config.anthropicKey)} <b>Claude AI</b> — the "tea", screenshot & scam reads`,
+      `${on(config.braveKey || config.serpapiKey)} <b>Web search</b> — socials, news, records`,
+      '',
+      '<i>Free sources (registry, OFAC, SEC, FINRA, CourtListener, NPPES, FEC, OpenCorporates, Wikipedia, GitHub, Bluesky, Wayback) are always on.</i>',
+      '',
+      '❌ = not connected — that data can’t appear until its key is set on Render.',
+    ];
+    return ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+  });
+
   // "Wall of Red Flags" — anonymized recent community flags (no names). The daily-open feed.
   const ago = (iso: string): string => {
     const mins = Math.max(1, Math.round((Date.now() - Date.parse(iso)) / 60000));
