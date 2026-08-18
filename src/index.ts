@@ -656,6 +656,48 @@ async function main(): Promise<void> {
     return ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
   });
 
+  // Structure-only dump of the raw Enformion response — field NAMES, not values,
+  // so we can tune the parser to the real API shape. Owner debug.
+  bot.command('probekeys', async (ctx) => {
+    if (!guard(ctx)) return;
+    if (!config.enformionName || !config.enformionPassword) {
+      await ctx.reply('Enformion creds not set.');
+      return;
+    }
+    const arg = ctx.match?.toString().trim();
+    if (!arg) {
+      await ctx.reply('Usage: <code>/probekeys First Last | City ST</code>', { parse_mode: 'HTML' });
+      return;
+    }
+    const [name, city] = arg.split('|').map((s) => s.trim());
+    const parts = (name ?? '').split(/\s+/);
+    try {
+      const res = await fetch('https://devapi.enformion.com/PersonSearch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'galaxy-ap-name': config.enformionName,
+          'galaxy-ap-password': config.enformionPassword,
+          'galaxy-search-type': 'Person',
+        },
+        body: JSON.stringify({ FirstName: parts[0], LastName: parts[parts.length - 1], ...(city ? { Addresses: [{ State: city.split(/\s+/).pop() }] } : {}) }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const data = (await res.json()) as Record<string, unknown>;
+      const persons = (data.persons ?? data.Persons ?? data.records ?? data.Records ?? []) as Record<string, unknown>[];
+      const p0 = persons[0] ?? {};
+      const lines = [
+        `HTTP ${res.status} · persons: ${persons.length}`,
+        `top keys: <code>${escapeHtml(Object.keys(data).join(', '))}</code>`,
+        `person[0] keys: <code>${escapeHtml(Object.keys(p0).join(', '))}</code>`,
+      ];
+      await ctx.reply(lines.join('\n\n').slice(0, 4000), { parse_mode: 'HTML' });
+    } catch (err) {
+      await ctx.reply(`ERROR: ${escapeHtml(err instanceof Error ? err.message : String(err))}`, { parse_mode: 'HTML' });
+    }
+  });
+
   // Live Enformion probe — actually calls the API so we can see WHY deep data
   // (marriage/relatives) is or isn't coming back. Usage: /probe Mike Parizher | Ashburn VA
   bot.command('probe', async (ctx) => {

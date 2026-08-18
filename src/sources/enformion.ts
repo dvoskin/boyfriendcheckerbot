@@ -239,28 +239,50 @@ export const enformionSource: Source = {
     const relOf = (r: any) => str(get(r, 'Relationship', 'relationship', 'RelationshipType', 'relationshipType'));
     const spouse = relatives.find((r) => /spouse|wife|husband/i.test(relOf(r) ?? ''));
 
-    // Always answer "is he married?" explicitly — even a clean result is useful.
-    const marriedRec = indHas('marriages', 'marriage', 'married') || Boolean(spouse);
-    const divorcedRec = indHas('divorces', 'divorce', 'divorced');
+    // Parse the actual RECORD arrays Person Search returns (nationwide), not just
+    // the yes/no indicator — this is the spouse name + date + place across states.
+    const dateOf = (r: any) => str(get(r, 'MarriageDate', 'marriageDate', 'DivorceDate', 'divorceDate', 'Date', 'date', 'DateOfMarriage', 'FilingDate', 'filingDate'));
+    const placeOf = (r: any) => {
+      const c = str(get(r, 'City', 'city', 'CountyName', 'countyName'));
+      const s = str(get(r, 'State', 'state'));
+      return [c, s].filter(Boolean).join(', ');
+    };
+    const spouseOf = (r: any) => str(get(r, 'SpouseName', 'spouseName', 'Spouse', 'spouse')) || nameOf(get(r, 'Spouse', 'spouse')) || nameOf(r);
+
+    const marriageRecs = arr(get(p, 'MarriageRecords', 'marriageRecords', 'Marriages', 'marriages'));
+    const divorceRecs = arr(get(p, 'DivorceRecords', 'divorceRecords', 'Divorces', 'divorces'));
+    const marriageLines = marriageRecs
+      .map((m) => [spouseOf(m) && `💍 to ${spouseOf(m)}`, dateOf(m) && `on ${dateOf(m)}`, placeOf(m) && `in ${placeOf(m)}`].filter(Boolean).join(' '))
+      .filter(Boolean);
+    const divorceLines = divorceRecs
+      .map((d) => [spouseOf(d) && `💔 from ${spouseOf(d)}`, dateOf(d) && `on ${dateOf(d)}`, placeOf(d) && `in ${placeOf(d)}`].filter(Boolean).join(' '))
+      .filter(Boolean);
+
+    // Married if any record OR indicator OR a spouse relative shows.
+    const marriedRec = marriageRecs.length > 0 || indHas('marriages', 'marriage', 'married') || Boolean(spouse);
+    const divorcedRec = divorceRecs.length > 0 || indHas('divorces', 'divorce', 'divorced');
     const statusLine = marriedRec
-      ? spouse
-        ? `💍 Marriage record found — possible spouse: ${nameOf(spouse)}`
-        : '💍 Marriage record on file'
+      ? marriageLines.length
+        ? `💍 Marriage record${marriageLines.length > 1 ? 's' : ''} found (${marriageLines.length})`
+        : spouse
+          ? `💍 Marriage record found — possible spouse: ${nameOf(spouse)}`
+          : '💍 Marriage record on file'
       : '💚 No marriage record surfaced';
     findings.push({
       source: 'enformion',
       label: 'Relationship status',
       title: statusLine,
       detail: [
-        divorcedRec && '💔 Divorce record also on file',
+        ...marriageLines.slice(0, 4),
+        ...(divorceLines.length ? divorceLines.slice(0, 4) : divorcedRec ? ['💔 Divorce record also on file'] : []),
         !marriedRec && 'No public marriage record came up — this does NOT fully rule it out (records lag and vary by state).',
-        'Public records — confirm before believing it.',
+        'Public records aggregated nationwide — confirm before believing it.',
       ]
         .filter(Boolean)
         .join('\n'),
       retrievedAt: ctx.now,
-      confidence: 0.55,
-      extra: { status: divorcedRec ? 'divorced' : marriedRec ? 'married' : 'single' },
+      confidence: marriageLines.length ? 0.7 : 0.55,
+      extra: { status: divorcedRec && !marriedRec ? 'divorced' : marriedRec ? 'married' : 'single' },
     });
 
     if (relatives.length) {
@@ -348,20 +370,39 @@ export const enformionSource: Source = {
       });
     }
 
-    // Criminal + court indicators are SAFETY signals — surface them separately so
-    // the report routes them into "Is he safe?", not buried in background.
+    // Criminal + court records are SAFETY signals — surface them so the report
+    // routes them into "Is he safe?". Parse the actual RECORD array (offense, date,
+    // state) when present, not just the yes/no indicator.
+    const crimeRecs = arr(get(p, 'CriminalRecords', 'criminalRecords', 'Criminal', 'criminal', 'Criminals', 'criminals'));
+    const crimeLines = crimeRecs
+      .map((c) => {
+        const off = str(get(c, 'Offense', 'offense', 'OffenseDescription', 'offenseDescription', 'Charge', 'charge', 'Category', 'category', 'CrimeType', 'crimeType'));
+        const date = str(get(c, 'OffenseDate', 'offenseDate', 'ArrestDate', 'arrestDate', 'Date', 'date', 'DispositionDate'));
+        const st = str(get(c, 'OffenseState', 'offenseState', 'State', 'state'));
+        const city = str(get(c, 'OffenseCity', 'offenseCity', 'City', 'city'));
+        const where = [city, st].filter(Boolean).join(', ');
+        return [off ?? 'Offense', date && `(${date})`, where].filter(Boolean).join(' ');
+      })
+      .filter(Boolean);
+
     const criminal: string[] = [];
-    if (indHas('criminal', 'criminalRecords')) criminal.push('⚠️ Criminal record on file');
-    if (indHas('judgments', 'judgment')) criminal.push('Civil judgment(s) against him');
+    if (crimeRecs.length || indHas('criminal', 'criminalRecords')) criminal.push(crimeRecs.length ? `⚠️ ${crimeRecs.length} criminal record(s) on file` : '⚠️ Criminal record on file');
+    if (indHas('judgments', 'judgment')) criminal.push('Civil judgment(s) against them');
     if (indHas('sexualOffenses', 'sexOffender', 'sexOffenses')) criminal.push('🔴 Sex-offense record indicator');
     if (criminal.length) {
       findings.push({
         source: 'enformion',
         label: 'Criminal record',
-        title: criminal[0]!.startsWith('🔴') || criminal[0]!.startsWith('⚠️') ? `🔴 ${criminal[0]!.replace(/^[🔴⚠️]\s*/, '')}` : `🔴 ${criminal[0]}`,
-        detail: [...criminal.slice(1), 'Public-records indicator — pull the actual case to confirm (some are sealed). Verify it’s him.'].filter(Boolean).join('\n'),
+        title: `🔴 ${criminal[0]!.replace(/^[🔴⚠️]\s*/, '')}`,
+        detail: [
+          ...crimeLines.slice(0, 6),
+          ...criminal.slice(1),
+          'Public-records data — pull the actual case to confirm (some are sealed). Verify it’s the right person.',
+        ]
+          .filter(Boolean)
+          .join('\n'),
         retrievedAt: ctx.now,
-        confidence: 0.55,
+        confidence: crimeLines.length ? 0.7 : 0.55,
       });
     }
 
