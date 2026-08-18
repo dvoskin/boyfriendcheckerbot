@@ -13,7 +13,7 @@ import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subject
 import { applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, spend, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
-import { escapeHtml, renderFindings, renderGraph, renderImageReport, renderProgress, renderReport, synthesize } from './report.js';
+import { escapeHtml, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReport, synthesize } from './report.js';
 import { type Candidate, enformionCandidates } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
@@ -64,7 +64,11 @@ const mainMenu = new InlineKeyboard()
   .text('📧 Email', 'ask:email')
   .text('📱 Phone', 'ask:phone')
   .row()
-  .text('📸 Photo', 'ask:image');
+  .text('📸 Photo', 'ask:image')
+  .row()
+  .text('💎 My tokens', 'balance')
+  .text('🎁 Free daily', 'daily')
+  .text('👯 Invite', 'invite');
 
 const ASK_PROMPT: Record<string, string> = {
   person: 'Send me their <b>full name</b> 🧑\n<i>Tip: add a city for a sharper match — <code>John Smith | Miami</code></i>',
@@ -347,32 +351,48 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
 
     const findingTotal = graph.nodes.reduce((n, node) => n + node.findings.length, 0);
     if (findingTotal === 0) {
+      lastSearched.set(ctx.from!.id, { seed, keys });
       await ctx.reply(
         [
           '🤷‍♀️ Hmm, came up empty on that one.',
           '',
-          'Could mean they keep a low profile — or I just need a better angle. Try sending their:',
-          '📧 email · 📱 phone · 📸 photo (as a File) · or a different @username 💫',
+          'Could mean they keep a low profile — or I just need a better angle. Give me one more thing to go on 👇',
         ].join('\n'),
-        { parse_mode: 'HTML' },
+        {
+          parse_mode: 'HTML',
+          reply_markup: new InlineKeyboard()
+            .text('📧 His email', 'ask:email')
+            .text('📱 His phone', 'ask:phone')
+            .row()
+            .text('📸 His photo', 'ask:image')
+            .text('💬 His @username', 'ask:username'),
+        },
       );
+      return;
     } else {
-      for (const chunk of renderReport(seed, graph, dossier)) {
+      const chunks = renderReport(seed, graph, dossier);
+      for (const chunk of chunks) {
         await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
       }
     }
 
-    // Offer to add their own experience to the network — the viral loop.
+    // Everything the user can do next is a TAP, never a typed command. This is
+    // the one-tap action hub attached to every report.
     lastSearched.set(ctx.from!.id, { seed, keys });
-    if (flagSummary.labels.length > 0) {
-      // (labels already shown in the alert above)
-    }
-    await ctx.reply('💬 Know them? Help the next person 👇', {
-      reply_markup: new InlineKeyboard()
-        .text('🚩 Flag this person', 'flag')
-        .row()
-        .text('🏷️ How you know them', 'label'),
-    });
+    const missing = missingSelectors(seed, graph);
+    const actions = new InlineKeyboard()
+      .text('🔔 Watch 24/7', 'watch:last')
+      .text('📸 Add his photo', 'ask:image')
+      .row();
+    if (missing.email) actions.text('📧 Add his email', 'ask:email');
+    if (missing.phone) actions.text('📱 Add his phone', 'ask:phone');
+    if (missing.email || missing.phone) actions.row();
+    actions
+      .text('🚩 Flag them', 'flag')
+      .text('🏷️ How you know them', 'label')
+      .row()
+      .text('🔍 Check someone else', 'check:new');
+    await ctx.reply('💫 <b>What next, bestie?</b>', { parse_mode: 'HTML', reply_markup: actions });
 
     await audit({
       at: new Date().toISOString(),
@@ -554,6 +574,52 @@ async function main(): Promise<void> {
     await ctx.reply(ASK_PROMPT[kind] ?? 'Send it over 👇', { parse_mode: 'HTML' });
   });
 
+  // "🔔 Watch 24/7" tapped → watch the last-searched person, zero typing.
+  bot.callbackQuery('watch:last', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const last = lastSearched.get(ctx.from.id);
+    if (!last) {
+      await ctx.reply('Check someone first, then tap 🔔 to keep tabs on them.');
+      return;
+    }
+    const seed = last.seed;
+    const note = await ctx.reply(`🔔 Setting up a 24/7 watch on <b>${escapeHtml(seed.raw)}</b>…`, { parse_mode: 'HTML' });
+    try {
+      const graph = await buildGraph(ALL_SOURCES, seed, { maxDepth: 2, maxNodes: 18 });
+      await addWatch(ctx.from.id, seed.kind, seed.value, seed.raw, graph.nodes.map((n) => n.id));
+      await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+      await ctx.reply(
+        `✅ <b>Watching ${escapeHtml(seed.raw)} 24/7.</b> I’ll ping you the second anything new shows up — new accounts, a new city, a fresh flag. 💖`,
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('👀 See who I’m watching', 'watchlist').row().text('🔍 Check someone else', 'check:new') },
+      );
+    } catch {
+      await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+      await ctx.reply('😬 Couldn’t set up the watch — try again in a moment.');
+    }
+  });
+
+  // "🔍 Check someone else" → straight back to the main menu, no typing.
+  bot.callbackQuery('check:new', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    pendingInput.delete(ctx.from.id);
+    await ctx.reply('🔍 <b>Who’s next?</b> Pick what you’ve got 👇', { parse_mode: 'HTML', reply_markup: mainMenu });
+  });
+
+  // "👀 See who I’m watching" tapped → show the watchlist, no typing.
+  bot.callbackQuery('watchlist', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const mine = (await allWatches()).filter((w) => w.userId === ctx.from.id);
+    if (!mine.length) {
+      await ctx.reply('👀 You’re not watching anyone yet. Check someone, then tap 🔔 Watch 24/7.');
+      return;
+    }
+    const lines = mine.map((w) => `• <b>${escapeHtml(w.raw)}</b> — since ${w.addedAt.slice(0, 10)}`);
+    await ctx.reply(`👀 <b>You’re watching:</b>\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+  });
+
   bot.command('budget', async (ctx) => {
     if (!guard(ctx)) return;
     const spent = await spentToday();
@@ -632,6 +698,10 @@ async function main(): Promise<void> {
   bot.command('daily', (ctx) => (guard(ctx) ? doDaily(ctx) : undefined));
   bot.command('invite', (ctx) => (guard(ctx) ? doInvite(ctx) : undefined));
 
+  bot.callbackQuery('balance', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await showBalance(ctx);
+  });
   bot.callbackQuery('daily', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (guard(ctx)) await doDaily(ctx);
@@ -832,8 +902,24 @@ async function main(): Promise<void> {
       const findings = [...(reverse ?? []), ...provenance];
 
       await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
-      for (const chunk of renderImageReport(findings)) {
-        await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+      const imgChunks = renderImageReport(findings);
+      for (let i = 0; i < imgChunks.length; i++) {
+        const isLast = i === imgChunks.length - 1;
+        await ctx.reply(imgChunks[i]!, {
+          parse_mode: 'HTML',
+          link_preview_options: { is_disabled: true },
+          ...(isLast
+            ? {
+                reply_markup: new InlineKeyboard()
+                  .text('🧑 Now check his name', 'ask:person')
+                  .row()
+                  .text('📧 His email', 'ask:email')
+                  .text('📱 His phone', 'ask:phone')
+                  .row()
+                  .text('🔍 Check someone else', 'check:new'),
+              }
+            : {}),
+        });
       }
 
       await audit({

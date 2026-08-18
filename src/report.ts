@@ -129,16 +129,6 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   const all = graph.nodes.flatMap((n) => n.findings);
   const sections: string[] = [];
 
-  // ── 1. Headline + traffic-light quick take + flags ───────────────────────
-  const hasRed = dossier.signals.some((s) => s.level === 'red');
-  const hasAmber = dossier.signals.some((s) => s.level === 'amber');
-  const light = hasRed ? '🔴' : hasAmber ? '🟡' : '🟢';
-  const take = hasRed
-    ? 'ooh, a couple of things we should look at, bestie 👀'
-    : hasAmber
-      ? 'mostly good — just a couple things to double-check 💫'
-      : 'nothing scary jumped out ✨';
-
   // ── 1. Summary card — header + the at-a-glance answers, ONE opening bubble ─
   const flags = dossier.signals.filter((s) => s.level !== 'info');
   const idf = all.find((f) => f.source === 'enformion' && f.label === 'Identity');
@@ -195,31 +185,75 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
         ? '🟡 a few yellow flags'
         : '🔴 serious red flags';
 
-  const summary = [
-    '♟️ <b>CHECKMATE REPORT</b>',
+  // ── The VERDICT + flag scoreboard — the screenshottable heart of the report.
+  // Verdict-first because that's what she screenshots and drops in the group chat.
+  const verdict = thin
+    ? '🤷 NOT ENOUGH TO CALL IT'
+    : score >= 75
+      ? '💚 LOOKING GREEN'
+      : score >= 45
+        ? '⚠️ PROCEED WITH CAUTION'
+        : '🚩 MAJOR RED FLAGS';
+
+  // A 10-block meter bar so the score reads at a glance, screenshot or not.
+  const filled = Math.max(0, Math.min(10, Math.round(score / 10)));
+  const meter = '█'.repeat(filled) + '░'.repeat(10 - filled);
+
+  // Build the two columns from REAL evidence only. Green flags are never asserted
+  // from absence ("nothing found" ≠ "he's safe") — only from positive confirmation.
+  const red: string[] = [];
+  const green: string[] = [];
+  if (anyF((f) => f.source === 'ofac')) red.push('On a sanctions / watchlist 🚨');
+  if (anyF((f) => f.source === 'registry' && /🔴/.test(f.title))) red.push('Sex-offender registry match');
+  if (anyF((f) => f.source === 'adverse' && /🚨/.test(f.title))) red.push('Arrest / lawsuit / scandal in the news');
+  if (anyF((f) => f.source === 'scam' && /🚨/.test(f.title))) red.push('Shows up in scam / fraud complaints');
+  if (
+    anyF((f) => (f.source === 'unicourt' || f.source === 'criminal') && /🔴/.test(f.title)) ||
+    anyF((f) => f.source === 'enformion' && f.label === 'Criminal record')
+  )
+    red.push('Court / criminal record on file');
+  if (relStatus === 'married') red.push('💍 Marriage record — may NOT be single');
+  if (anyF((f) => f.label === 'Synthetic media')) red.push('Photos may be AI-generated 🤖');
+  if (anyF((f) => f.source === 'hibp' && /DATING|ADULT/i.test(f.title))) red.push('Account on a dating / adult site');
+  if (anyF((f) => (f.source === 'ipqs' || f.source === 'emailrep') && /🔴/.test(f.title))) red.push('Email/phone looks risky (burner/fraud)');
+
+  if (hasDeep && relStatus !== 'married' && relStatus !== 'divorced') green.push('No marriage record — looks single 💚');
+  if (hasDeep) green.push('Identity matches public records ✅');
+  if (confirmedAccts >= 2) green.push('Real, established online footprint');
+  if (employer || occupation) green.push('Job / employer checks out 💼');
+  if (age) green.push('Age lines up with the records');
+  if (!red.length && !thin && green.length) green.push('Nothing scary jumped out ✨');
+
+  const card = [
+    '♟️ <b>CHECKMATE</b>  ·  <i>your bestie did the digging</i>',
     '━━━━━━━━━━━━━━━',
     `🎯 <b>${escapeHtml(seed.raw)}</b>`,
     '',
-    `💯 <b>Vibe check:</b> ${score}/100 — ${vibe}`,
-    `${light} <b>Quick take:</b> ${take}`,
+    `<b>${verdict}</b>`,
+    `💯 <code>${meter}</code> ${score}/100`,
+    '',
   ];
-  // The at-a-glance answers, folded right into the opener.
+  // At-a-glance facts, right under the verdict.
   const facts: string[] = [];
   if (age) facts.push(`🎂 <b>Age:</b> ${escapeHtml(age)}`);
   if (city) facts.push(`📍 <b>Lives:</b> ${escapeHtml(city)}`);
   if (relStatus) {
     const rel = relStatus === 'married' ? '💍 Married — careful!' : relStatus === 'divorced' ? '💔 Divorced' : '💚 No marriage record (looks single)';
-    facts.push(`💘 <b>Relationship:</b> ${rel}`);
+    facts.push(`💘 <b>Status:</b> ${rel}`);
   }
   if (employer || occupation) facts.push(`💼 <b>Works:</b> ${escapeHtml([occupation, employer].filter(Boolean).join(' @ '))}`);
-  if (facts.length) summary.push('', ...facts);
-  if (flags.length) {
-    summary.push('', '🚩 <b>Keep an eye on:</b>');
-    for (const s of [...flags].sort((a, b) => (a.level === 'red' ? -1 : 1))) summary.push(`${SIGNAL_ICON[s.level]} ${escapeHtml(s.text)}`);
-  } else if (facts.length) {
-    summary.push('', '🚩 <b>Red flags:</b> none so far ✨');
-  }
-  sections.push(summary.join('\n'));
+  if (facts.length) card.push(...facts, '');
+
+  // The scoreboard — two columns, emoji-led, built to screenshot.
+  card.push(`🚩 <b>RED FLAGS (${red.length})</b>`);
+  if (red.length) for (const r of red) card.push(`   • ${r}`);
+  else card.push('   <i>· none so far</i>');
+  card.push('', `💚 <b>GREEN FLAGS (${green.length})</b>`);
+  if (green.length) for (const g of green) card.push(`   • ${g}`);
+  else card.push('   <i>· none confirmed yet</i>');
+
+  card.push('', '📸 <i>screenshot this before you text him back</i>');
+  sections.push(card.join('\n'));
 
   // ── 1.7 Thin-footprint callout — turn an empty result into a next step ───
   if (thin) {
@@ -232,8 +266,8 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     sections.push(tips.join('\n'));
   }
 
-  // ── 2. The AI read comes SECOND — the story before the evidence ──────────
-  if (dossier.narrative) sections.push(`💭 <b>My honest read</b>\n\n${escapeHtml(dossier.narrative)}`);
+  // ── 2. The tea — the bestie-voice read, right after the verdict ──────────
+  if (dossier.narrative) sections.push(`☕ <b>THE TEA</b> — <i>what it all actually means</i>\n\n${escapeHtml(dossier.narrative)}`);
 
   // ── 3. Is he safe? — highest-stakes, never diluted ───────────────────────
   const safety = all.filter(
@@ -397,8 +431,17 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     sections.push(a.join('\n'));
   }
 
-  // ── "Want deeper?" — nudge for the selectors we don't have yet ───────────
-  const nudges: string[] = [];
+  // Everything the reader can DO next is a button (attached in index.ts), never a
+  // command to paste — the audience won't type /watch. So the report just ends here.
+  return chunk(sections);
+}
+
+/**
+ * Which "dig deeper" selectors we don't already have for this subject — used to
+ * decide which enrichment buttons to show under the report.
+ */
+export function missingSelectors(seed: Subject, graph: GraphResult): { email: boolean; phone: boolean } {
+  const all = graph.nodes.flatMap((n) => n.findings);
   const haveEmail =
     seed.kind === 'email' ||
     graph.nodes.some((n) => n.kind === 'email') ||
@@ -407,15 +450,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     seed.kind === 'phone' ||
     all.some((f) => f.source === 'phone') ||
     all.some((f) => f.source === 'enformion' && f.label === 'Phones');
-  if (!haveEmail) nudges.push('📧 their <b>email</b> — finds more accounts + breach checks');
-  if (!havePhone) nudges.push('📱 their <b>phone</b> — tells you the real registered name');
-  nudges.push('📸 their <b>photo</b> (as a File) — catches catfish + stolen pics');
-  sections.push(['💌 <b>Want me to dig deeper?</b> Send me:', '', ...nudges].join('\n'));
-
-  // ── 9. Footer ────────────────────────────────────────────────────────────
-  sections.push(`🔔 Want me to keep tabs on them 24/7? Send  <code>/watch ${escapeHtml(seed.raw)}</code> 💖`);
-
-  return chunk(sections);
+  return { email: !haveEmail, phone: !havePhone };
 }
 
 /**
