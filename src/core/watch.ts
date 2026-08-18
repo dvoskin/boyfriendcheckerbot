@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { readJson, writeJson } from './store.js';
 import type { SubjectKind } from './types.js';
 
 /**
@@ -25,17 +25,12 @@ let loaded = false;
 
 async function ensureLoaded(): Promise<void> {
   if (loaded) return;
-  await mkdir(config.dataDir, { recursive: true });
-  try {
-    watches = JSON.parse(await readFile(FILE(), 'utf8')) as Watch[];
-  } catch {
-    watches = [];
-  }
+  watches = await readJson<Watch[]>(FILE(), []);
   loaded = true;
 }
 
 async function persist(): Promise<void> {
-  await writeFile(FILE(), JSON.stringify(watches, null, 2), 'utf8');
+  await writeJson(FILE(), watches);
 }
 
 function watchId(userId: number, kind: SubjectKind, value: string): string {

@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { readJson, writeJson } from './store.js';
 
 /**
  * Who searched whom — the ledger behind pull-back alerts. When someone flags a
@@ -23,16 +23,11 @@ let loaded = false;
 
 async function ensureLoaded(): Promise<void> {
   if (loaded) return;
-  await mkdir(config.dataDir, { recursive: true });
-  try {
-    index = JSON.parse(await readFile(FILE(), 'utf8')) as Record<string, SearchRecord[]>;
-  } catch {
-    index = {};
-  }
+  index = await readJson<Record<string, SearchRecord[]>>(FILE(), {});
   loaded = true;
 }
 async function persist(): Promise<void> {
-  await writeFile(FILE(), JSON.stringify(index), 'utf8');
+  await writeJson(FILE(), index);
 }
 
 /** Remember that this user searched a person described by these identity keys. */

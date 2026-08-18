@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { readJson, writeJson } from './store.js';
 
 /**
  * "Claim & Clear" profiles — the second paying audience. The person being checked
@@ -27,16 +27,11 @@ let loaded = false;
 
 async function ensureLoaded(): Promise<void> {
   if (loaded) return;
-  await mkdir(config.dataDir, { recursive: true });
-  try {
-    profiles = JSON.parse(await readFile(FILE(), 'utf8')) as Profile[];
-  } catch {
-    profiles = [];
-  }
+  profiles = await readJson<Profile[]>(FILE(), []);
   loaded = true;
 }
 async function persist(): Promise<void> {
-  await writeFile(FILE(), JSON.stringify(profiles), 'utf8');
+  await writeJson(FILE(), profiles);
 }
 
 /** Create or update this user's own claimed profile. One profile per user. */

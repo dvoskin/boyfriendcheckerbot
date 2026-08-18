@@ -22,6 +22,8 @@ export interface ReportSummary {
   score: number; // 0–100
   red: number;
   green: number;
+  redLabels: string[]; // the actual red-flag lines (for the card + previews)
+  greenLabels: string[];
 }
 
 /** A report split into the free verdict and the paywalled reveals. */
@@ -483,12 +485,16 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   const order: RevealKey[] = ['safety', 'single', 'social', 'tea'];
   locked.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
 
+  // Strip emoji from flag labels for the card (bundled font has no color emoji).
+  const plain = (s: string) => s.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/\s+/g, ' ').trim();
   const summary: ReportSummary = {
     name: seed.raw,
     verdict: verdict.replace(/^[^A-Z]*/, ''), // drop the leading emoji for the card
     score,
     red: red.length,
     green: green.length,
+    redLabels: red.map(plain),
+    greenLabels: green.map(plain),
   };
   return { free, locked, thin, summary };
 }

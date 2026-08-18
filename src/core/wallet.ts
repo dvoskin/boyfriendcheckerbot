@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { readJson, writeJson } from './store.js';
 
 /**
  * Token wallet + retention loops. Every search costs tokens; users top up by
@@ -65,7 +65,7 @@ export const TOKEN_PACKS: TokenPack[] = [
   { id: 'taste', label: 'Taste', stars: 99, tokens: 60 },
   { id: 'popular', label: 'Most Popular', stars: 299, tokens: 220, tag: '🔥' },
   { id: 'value', label: 'Best Value', stars: 599, tokens: 500, tag: '💎' },
-  { id: 'guardian', label: 'Guardian', stars: 1299, tokens: 1200, tag: '👑' },
+  { id: 'mega', label: 'Mega', stars: 1299, tokens: 1200, tag: '🚀' },
 ];
 
 interface Wallet {
@@ -87,16 +87,11 @@ let loaded = false;
 
 async function ensureLoaded(): Promise<void> {
   if (loaded) return;
-  await mkdir(config.dataDir, { recursive: true });
-  try {
-    wallets = JSON.parse(await readFile(FILE(), 'utf8')) as Record<string, Wallet>;
-  } catch {
-    wallets = {};
-  }
+  wallets = await readJson<Record<string, Wallet>>(FILE(), {});
   loaded = true;
 }
 async function persist(): Promise<void> {
-  await writeFile(FILE(), JSON.stringify(wallets), 'utf8');
+  await writeJson(FILE(), wallets);
 }
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -139,8 +134,8 @@ export async function isGuardian(id: number): Promise<boolean> {
   return Boolean(w.guardianUntil && Date.parse(w.guardianUntil) > Date.now());
 }
 
-/** Activate/extend the Guardian subscription for `days` more. */
-export async function setGuardian(id: number, days: number): Promise<void> {
+/** Activate/extend the Guardian subscription for `days` more (30 = one period). */
+export async function setGuardian(id: number, days = 30): Promise<void> {
   const w = await getWallet(id);
   const base = w.guardianUntil && Date.parse(w.guardianUntil) > Date.now() ? Date.parse(w.guardianUntil) : Date.now();
   w.guardianUntil = new Date(base + days * 24 * 60 * 60 * 1000).toISOString();
@@ -162,6 +157,29 @@ export async function addTokens(id: number, amount: number): Promise<void> {
   const w = await getWallet(id);
   w.balance += amount;
   await persist();
+}
+
+// ── Payment idempotency ledger ─────────────────────────────────────────────
+// Telegram redelivers a successful_payment if the bot dies before the update
+// offset is confirmed. Without this, every redelivery would credit again.
+const CHARGES_FILE = () => join(config.dataDir, 'charges.json');
+let charges: Record<string, { payload: string; at: string }> = {};
+let chargesLoaded = false;
+
+async function ensureCharges(): Promise<void> {
+  if (chargesLoaded) return;
+  charges = await readJson<Record<string, { payload: string; at: string }>>(CHARGES_FILE(), {});
+  chargesLoaded = true;
+}
+
+/** Returns true only the FIRST time a charge id is seen; records it atomically. */
+export async function claimCharge(chargeId: string, payload: string): Promise<boolean> {
+  if (!chargeId) return true; // no id → best-effort allow (shouldn't happen for Stars)
+  await ensureCharges();
+  if (charges[chargeId]) return false; // already processed → skip
+  charges[chargeId] = { payload, at: new Date().toISOString() };
+  await writeJson(CHARGES_FILE(), charges);
+  return true;
 }
 
 export interface DailyResult {

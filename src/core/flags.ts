@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { readJson, writeJson } from './store.js';
 import { stateFromHint } from './names.js';
 import type { Subject } from './types.js';
 
@@ -44,17 +44,12 @@ let loaded = false;
 
 async function ensureLoaded(): Promise<void> {
   if (loaded) return;
-  await mkdir(config.dataDir, { recursive: true });
-  try {
-    flags = JSON.parse(await readFile(FILE(), 'utf8')) as Flag[];
-  } catch {
-    flags = [];
-  }
+  flags = await readJson<Flag[]>(FILE(), []);
   loaded = true;
 }
 
 async function persist(): Promise<void> {
-  await writeFile(FILE(), JSON.stringify(flags), 'utf8');
+  await writeJson(FILE(), flags);
 }
 
 function normName(s: string): string {

@@ -14,7 +14,7 @@ import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, recentF
 import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
 import { badgeFor, claimProfile, myProfile, setBadgePaid, verifiedOwnerFor } from './core/profiles.js';
-import { addTokens, applyReferral, balanceOf, claimDaily, COST, grantStarter, GUARDIAN_STARS, inviteCount, isFree, isGuardian, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
+import { addTokens, applyReferral, balanceOf, claimCharge, claimDaily, COST, grantStarter, GUARDIAN_STARS, inviteCount, isFree, isGuardian, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
@@ -1173,58 +1173,57 @@ async function main(): Promise<void> {
   });
 
   // Telegram asks us to approve the charge — we must answer within 10s.
+  // Only approve a checkout whose payload we actually recognise — otherwise the
+  // user would be charged and get nothing.
+  const knownPayload = (p: string): boolean =>
+    p === 'guardian' || p === 'badge30' || TOKEN_PACKS.some((pk) => `pack:${pk.id}` === p);
   bot.on('pre_checkout_query', async (ctx) => {
-    await ctx.answerPreCheckoutQuery(true).catch(() => {});
+    const ok = knownPayload(ctx.preCheckoutQuery.invoice_payload);
+    await ctx.answerPreCheckoutQuery(ok, ok ? undefined : { error_message: 'This item is no longer available — please start over.' }).catch(() => {});
   });
 
-  // Payment succeeded → credit the tokens (or activate the badge).
+  // Payment succeeded → credit the tokens (or activate a subscription/badge).
+  // Idempotent: Telegram redelivers this if we die before confirming the offset.
   bot.on('message:successful_payment', async (ctx) => {
     const pay = ctx.message.successful_payment;
+    const uid = ctx.from!.id;
+    // claimCharge returns false if we've already processed this exact payment.
+    if (!(await claimCharge(pay.telegram_payment_charge_id, pay.invoice_payload).catch(() => true))) return;
+    const logPurchase = (subjectValue: string, findingCount: number) =>
+      audit({ at: new Date().toISOString(), telegramUserId: uid, username: ctx.from?.username, subjectKind: 'purchase', subjectValue, sourcesRun: ['payment'], findingCount }).catch(() => {});
+
     if (pay.invoice_payload === 'guardian') {
-      await setGuardian(ctx.from!.id, 31); // 30-day period + a day of grace
-      await ctx.reply('👑 <b>Welcome, Guardian!</b> Unlimited checks & unlocks are on, and I’ll keep watch for you. 💛', { parse_mode: 'HTML' });
-      await audit({
-        at: new Date().toISOString(),
-        telegramUserId: ctx.from!.id,
-        username: ctx.from?.username,
-        subjectKind: 'purchase',
-        subjectValue: `guardian:${GUARDIAN_STARS}stars`,
-        sourcesRun: ['payment'],
-        findingCount: 0,
-      });
+      await setGuardian(uid, 30);
+      const renewal = pay.is_recurring && !pay.is_first_recurring;
+      await ctx.reply(
+        renewal
+          ? '👑 <b>Guardian renewed</b> — another month of unlimited. Thank you! 💛'
+          : '👑 <b>Welcome, Guardian!</b> Unlimited checks & unlocks are on, and I’ll keep watch for you. 💛',
+        { parse_mode: 'HTML' },
+      );
+      await logPurchase(`guardian:${GUARDIAN_STARS}stars${renewal ? ':renewal' : ''}`, 0);
       return;
     }
     if (pay.invoice_payload === 'badge30') {
-      await setBadgePaid(ctx.from!.id, 30);
+      await setBadgePaid(uid, 30);
       await ctx.reply('✅ <b>You’re Verified for 30 days!</b> 🎉\nAnyone who checks you now sees your ✅ Verified badge. 💛', { parse_mode: 'HTML' });
-      await audit({
-        at: new Date().toISOString(),
-        telegramUserId: ctx.from!.id,
-        username: ctx.from?.username,
-        subjectKind: 'purchase',
-        subjectValue: `badge30:${BADGE_STARS}stars`,
-        sourcesRun: ['payment'],
-        findingCount: 0,
-      });
+      await logPurchase(`badge30:${BADGE_STARS}stars`, 0);
       return;
     }
     const pack = TOKEN_PACKS.find((p) => `pack:${p.id}` === pay.invoice_payload);
-    if (!pack) return;
-    await addTokens(ctx.from!.id, pack.tokens);
-    const bal = await balanceOf(ctx.from!.id);
+    if (!pack) {
+      // Shouldn't happen (pre_checkout validates), but never leave a payer empty-handed.
+      console.error('Unknown paid payload:', pay.invoice_payload);
+      await ctx.reply('✅ Payment received — but I couldn’t match the item. Message support and we’ll sort it out. 💛');
+      return;
+    }
+    await addTokens(uid, pack.tokens);
+    const bal = await balanceOf(uid);
     await ctx.reply(
       `✅ <b>Payment received — thank you!</b> 💛\n+${pack.tokens} tokens added. You’ve got <b>${bal}</b> 💎\n\nGo check someone 👇`,
       { parse_mode: 'HTML', reply_markup: mainMenu },
     );
-    await audit({
-      at: new Date().toISOString(),
-      telegramUserId: ctx.from!.id,
-      username: ctx.from?.username,
-      subjectKind: 'purchase',
-      subjectValue: `${pack.id}:${pack.stars}stars`,
-      sourcesRun: ['payment'],
-      findingCount: pack.tokens,
-    });
+    await logPurchase(`${pack.id}:${pack.stars}stars`, pack.tokens);
   });
 
   bot.command('agree', async (ctx) => {

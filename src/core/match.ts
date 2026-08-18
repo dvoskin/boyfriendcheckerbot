@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from './config.js';
+import { readJson, writeJson } from './store.js';
 
 /**
  * The "are we dating the same person?" network — done the ONLY way that survives
@@ -21,16 +21,11 @@ let loaded = false;
 
 async function ensureLoaded(): Promise<void> {
   if (loaded) return;
-  await mkdir(config.dataDir, { recursive: true });
-  try {
-    store = JSON.parse(await readFile(FILE(), 'utf8')) as Record<string, OptIn[]>;
-  } catch {
-    store = {};
-  }
+  store = await readJson<Record<string, OptIn[]>>(FILE(), {});
   loaded = true;
 }
 async function persist(): Promise<void> {
-  await writeFile(FILE(), JSON.stringify(store), 'utf8');
+  await writeJson(FILE(), store);
 }
 
 /**
