@@ -182,14 +182,120 @@ export const enformionSource: Source = {
         : [];
     if (people.length === 0) return [];
 
-    return parseEnformionPerson(people[0]!, ctx, {
+    const p0 = people[0]!;
+    const findings = parseEnformionPerson(p0, ctx, {
       subjectRaw: subject.raw,
       np,
       peopleCount: people.length,
       stateHint,
     });
+
+    // PersonSearch only returns yes/no indicators — so when it flags a marriage or
+    // criminal record, hit the DEDICATED endpoint to fetch the actual details.
+    // Gated on the indicator so we only spend the extra call when there's a hit.
+    const hasIdentity = findings.some((f) => f.label === 'Identity');
+    if (hasIdentity && np) {
+      const ind = get(p0, 'indicators', 'Indicators') ?? {};
+      const iHas = (...k: string[]) => truthy(get(ind, ...k));
+      if (iHas('marriages', 'marriage', 'married', 'divorces', 'divorce')) {
+        findings.push(...(await marriageDetails(np, stateHint, ctx).catch(() => [])));
+      }
+      if (iHas('criminal', 'criminalRecords', 'sexualOffenses', 'sexOffender')) {
+        findings.push(...(await criminalDetails(np, stateHint, ctx).catch(() => [])));
+      }
+    }
+    return findings;
   },
 };
+
+/** Raw POST to an Enformion endpoint, tolerant of unknown paths/search-types. */
+async function enformionRaw(paths: string[], searchTypes: string[], body: Obj): Promise<Obj | null> {
+  for (const path of paths) {
+    for (const st of searchTypes) {
+      let res: Response;
+      try {
+        res = await fetch(`https://devapi.enformion.com${path}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'galaxy-ap-name': config.enformionName!,
+            'galaxy-ap-password': config.enformionPassword!,
+            'galaxy-search-type': st,
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(15_000),
+        });
+      } catch {
+        continue;
+      }
+      if (res.ok) return (await res.json().catch(() => null)) as Obj | null;
+      // 404 (wrong path) / 400-403 (wrong search-type) → try the next combo.
+    }
+  }
+  return null;
+}
+
+/** Dedicated Marriage + Divorce search → actual spouse names, dates, county. */
+async function marriageDetails(np: { first: string; last: string; middle?: string }, state: string | null | undefined, ctx: { now: string }): Promise<Finding[]> {
+  const body: Obj = { FirstName: np.first, LastName: np.last, ...(np.middle ? { MiddleName: np.middle } : {}), ...(state ? { State: state } : {}) };
+  const spouseOf = (r: any) =>
+    str(get(r, 'SpouseName', 'spouseName')) ||
+    str(get(r, 'BrideName', 'brideName')) ||
+    str(get(r, 'GroomName', 'groomName')) ||
+    arr(get(r, 'Names', 'names', 'Parties', 'parties')).map(nameOf).filter(Boolean).join(' & ') ||
+    nameOf(get(r, 'Spouse', 'spouse'));
+  const dateOf = (r: any) => str(get(r, 'MarriageDate', 'marriageDate', 'DivorceDate', 'divorceDate', 'Date', 'date', 'RecordingDate'));
+  const placeOf = (r: any) => [str(get(r, 'CountyName', 'countyName', 'County', 'county')), str(get(r, 'State', 'state'))].filter(Boolean).join(', ');
+
+  const out: Finding[] = [];
+  const mData = await enformionRaw(['/MarriageSearch', '/Marriage/Search', '/Marriage'], ['Marriage', 'DevAPIMarriage', 'MarriageSearch'], body);
+  const marriages = arr(get(mData ?? {}, 'marriages', 'Marriages', 'records', 'Records', 'results', 'Results', 'data'));
+  const mLines = marriages.map((m) => [spouseOf(m) && `💍 to ${spouseOf(m)}`, dateOf(m) && `on ${dateOf(m)}`, placeOf(m) && `in ${placeOf(m)}`].filter(Boolean).join(' ')).filter(Boolean);
+
+  const dData = await enformionRaw(['/DivorceSearch', '/Divorce/Search', '/Divorce'], ['Divorce', 'DevAPIDivorce', 'DivorceSearch'], body);
+  const divorces = arr(get(dData ?? {}, 'divorces', 'Divorces', 'records', 'Records', 'results', 'Results', 'data'));
+  const dLines = divorces.map((d) => [spouseOf(d) && `💔 from ${spouseOf(d)}`, dateOf(d) && `on ${dateOf(d)}`, placeOf(d) && `in ${placeOf(d)}`].filter(Boolean).join(' ')).filter(Boolean);
+
+  if (mLines.length || dLines.length) {
+    out.push({
+      source: 'enformion',
+      label: 'Relationship status',
+      title: mLines.length ? `💍 Marriage record${mLines.length > 1 ? 's' : ''} found (${mLines.length})` : '💔 Divorce record on file',
+      detail: [...mLines.slice(0, 5), ...dLines.slice(0, 5), 'From the marriage/divorce index — confirm names and dates match.'].join('\n'),
+      retrievedAt: ctx.now,
+      confidence: 0.72,
+      extra: { status: mLines.length ? 'married' : 'divorced' },
+    });
+  }
+  return out;
+}
+
+/** Dedicated Criminal search → actual offenses, dates, states. */
+async function criminalDetails(np: { first: string; last: string; middle?: string }, state: string | null | undefined, ctx: { now: string }): Promise<Finding[]> {
+  const body: Obj = { FirstName: np.first, LastName: np.last, ...(np.middle ? { MiddleName: np.middle } : {}), ...(state ? { State: state } : {}) };
+  const data = await enformionRaw(['/CriminalSearch', '/CriminalSearchV2', '/Criminal/Search', '/Criminal'], ['Criminal', 'CriminalV2', 'DevAPICriminalV2', 'DevAPICriminal'], body);
+  const recs = arr(get(data ?? {}, 'criminalRecords', 'CriminalRecords', 'criminals', 'Criminals', 'records', 'Records', 'results', 'Results', 'offenses', 'data'));
+  const lines = recs
+    .map((c) => {
+      const off = str(get(c, 'Offense', 'offense', 'OffenseDescription', 'offenseDescription', 'Charge', 'charge', 'Category', 'category'));
+      const date = str(get(c, 'OffenseDate', 'offenseDate', 'ArrestDate', 'arrestDate', 'DispositionDate', 'Date', 'date'));
+      const st = str(get(c, 'OffenseState', 'offenseState', 'State', 'state'));
+      return [off ?? 'Offense', date && `(${date})`, st].filter(Boolean).join(' ');
+    })
+    .filter(Boolean);
+  if (!lines.length) return [];
+  return [
+    {
+      source: 'enformion',
+      label: 'Criminal record',
+      title: `🔴 ${recs.length} criminal record(s) found`,
+      detail: [...lines.slice(0, 8), 'From the criminal index — pull the actual case to confirm (some are sealed). Verify it’s the right person.'].join('\n'),
+      retrievedAt: ctx.now,
+      confidence: 0.72,
+    },
+  ];
+}
 
 /**
  * Turn ONE Enformion person record into report findings — shared by Person
