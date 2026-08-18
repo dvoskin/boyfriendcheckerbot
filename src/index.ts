@@ -20,6 +20,7 @@ import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from '
 import { chunkText, escapeHtml, type LockedSection, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
 import { renderCardPng } from './media/card.js';
 import { generateDateQuestions } from './core/predate.js';
+import { QUIZ, quizAt, randomQuizIndex, randomTip, tipOfDay } from './core/content.js';
 import { analyzeScamText } from './core/scamtext.js';
 import { type Candidate, enformionCandidates, enformionSource } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
@@ -741,6 +742,58 @@ async function main(): Promise<void> {
     await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔍 Check someone', 'check:new') });
   }
   bot.command('wall', (ctx) => (guard(ctx) ? showWall(ctx) : undefined));
+
+  // ── Red flag of the day (daily habit) ────────────────────────────────────
+  const tipKb = () => new InlineKeyboard().text('🎮 Play: red flag or fine?', 'quiz').row().text('🔍 Check someone', 'check:new');
+  bot.command('tip', (ctx) => {
+    if (!guard(ctx)) return;
+    return ctx.reply(`💅 <b>Red flag of the day</b>\n\n${tipOfDay()}`, { parse_mode: 'HTML', reply_markup: tipKb() });
+  });
+  bot.callbackQuery('tip', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await ctx.reply(`💅 <b>Red flag of the day</b>\n\n${tipOfDay()}`, { parse_mode: 'HTML', reply_markup: tipKb() });
+  });
+
+  // ── "Red flag or fine?" quiz (daily game + free tokens) ──────────────────
+  const quizReward = new Map<number, string>(); // uid -> day already rewarded
+  async function sendQuiz(ctx: Context): Promise<void> {
+    const i = randomQuizIndex(ctx.from!.id + Math.floor(Date.now() / 3_600_000));
+    const q = quizAt(i)!;
+    await ctx.reply(`🎮 <b>Red flag or fine?</b>\n\n${q.scenario}`, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('🚩 Red flag', `quizans:${i}:red`).text('✅ Totally fine', `quizans:${i}:fine`),
+    });
+  }
+  bot.command('quiz', (ctx) => (guard(ctx) ? sendQuiz(ctx) : undefined));
+  bot.callbackQuery('quiz', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await sendQuiz(ctx);
+  });
+  bot.callbackQuery(/^quizans:(\d+):(red|fine)$/, async (ctx) => {
+    if (!guard(ctx)) {
+      await ctx.answerCallbackQuery().catch(() => {});
+      return;
+    }
+    const q = quizAt(Number(ctx.match![1]));
+    if (!q) {
+      await ctx.answerCallbackQuery().catch(() => {});
+      return;
+    }
+    const right = ctx.match![2] === q.answer;
+    await ctx.answerCallbackQuery(right ? 'Nailed it 💅' : 'Gotcha! 👀').catch(() => {});
+    // First correct answer each day pays a few tokens — the habit reward.
+    const today = new Date().toISOString().slice(0, 10);
+    let bonus = '';
+    if (right && quizReward.get(ctx.from.id) !== today) {
+      quizReward.set(ctx.from.id, today);
+      await addTokens(ctx.from.id, 3);
+      bonus = '\n🎁 <b>+3 tokens</b> for playing today!';
+    }
+    await ctx.reply(
+      `${right ? '✅ <b>Correct!</b>' : '❌ <b>Not quite —</b>'} it’s a <b>${q.answer === 'red' ? '🚩 red flag' : '✅ fine'}</b>.\n\n${q.explain}${bonus}`,
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🎮 Another', 'quiz').text('🔍 Check someone', 'check:new') },
+    );
+  });
   bot.callbackQuery('wall', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (guard(ctx)) await showWall(ctx);
