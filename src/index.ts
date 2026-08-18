@@ -14,7 +14,7 @@ import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, recentF
 import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
 import { badgeFor, claimProfile, myProfile, setBadgePaid, verifiedOwnerFor } from './core/profiles.js';
-import { addTokens, applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, isFree, type RevealKey, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
+import { addTokens, applyReferral, balanceOf, claimDaily, COST, grantStarter, GUARDIAN_STARS, inviteCount, isFree, isGuardian, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
@@ -1022,6 +1022,10 @@ async function main(): Promise<void> {
 
   async function showBalance(ctx: Context): Promise<void> {
     const uid = ctx.from!.id;
+    if (await isGuardian(uid)) {
+      await ctx.reply('👑 <b>Guardian — unlimited</b>\n<i>Unlimited checks & unlocks + monitoring. Thank you! 💛</i>', { parse_mode: 'HTML' });
+      return;
+    }
     if (isFree(uid)) {
       await ctx.reply('💎 <b>Tokens: ∞ Unlimited</b>\n<i>Free mode — search and unlock everything, no limits. 💛</i>', {
         parse_mode: 'HTML',
@@ -1108,12 +1112,44 @@ async function main(): Promise<void> {
     for (const p of TOKEN_PACKS) {
       kb.text(`${p.tag ? p.tag + ' ' : ''}${p.tokens} tokens · ${p.stars}⭐`, `pack:${p.id}`).row();
     }
+    kb.text('👑 Go Guardian — unlimited (monthly)', 'guardian');
     await ctx.reply(
-      ['💎 <b>Top up with Telegram Stars</b> ⭐', '', 'Instant, in-app, no card needed. Pick a pack 👇'].join('\n'),
+      ['💎 <b>Top up with Telegram Stars</b> ⭐', '', 'Instant, in-app, no card needed. Pick a pack 👇', '', 'Or go 👑 <b>Guardian</b> for unlimited everything.'].join('\n'),
       { parse_mode: 'HTML', reply_markup: kb },
     );
   });
   bot.command('buy', (ctx) => (guard(ctx) ? ctx.reply('💎 Tap below to top up 👇', { reply_markup: new InlineKeyboard().text('💎 Buy tokens', 'buy') }) : undefined));
+
+  // "👑 Go Guardian" — recurring monthly Stars subscription: unlimited checks + monitoring.
+  async function offerGuardian(ctx: Context): Promise<void> {
+    if (await isGuardian(ctx.from!.id)) {
+      await ctx.reply('👑 <b>You’re a Guardian!</b> Unlimited checks + monitoring are on. 💛', { parse_mode: 'HTML' });
+      return;
+    }
+    try {
+      const link = await ctx.api.createInvoiceLink(
+        '👑 Checkmate Guardian — monthly',
+        'Unlimited checks & unlocks, ongoing monitoring alerts, and priority. Cancel anytime.',
+        'guardian',
+        '', // Stars: no provider token
+        'XTR',
+        [{ label: 'Guardian · 1 month', amount: GUARDIAN_STARS }],
+        { subscription_period: 2592000 }, // 30 days — the only period Telegram allows
+      );
+      await ctx.reply(
+        ['👑 <b>Checkmate Guardian</b>', '', '✅ Unlimited checks & unlocks', '🔔 Ongoing monitoring alerts', '⚡ Priority', '', `<b>${GUARDIAN_STARS}⭐ / month</b> — cancel anytime.`].join('\n'),
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().url('👑 Subscribe', link) },
+      );
+    } catch (err) {
+      console.error('guardian link failed:', err);
+      await ctx.reply('😬 Couldn’t open the subscription — try again in a moment.');
+    }
+  }
+  bot.command('guardian', (ctx) => (guard(ctx) ? offerGuardian(ctx) : undefined));
+  bot.callbackQuery('guardian', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await offerGuardian(ctx);
+  });
 
   // A pack chosen → send a Telegram Stars invoice (currency XTR, no provider token).
   bot.callbackQuery(/^pack:(.+)$/, async (ctx) => {
@@ -1144,6 +1180,20 @@ async function main(): Promise<void> {
   // Payment succeeded → credit the tokens (or activate the badge).
   bot.on('message:successful_payment', async (ctx) => {
     const pay = ctx.message.successful_payment;
+    if (pay.invoice_payload === 'guardian') {
+      await setGuardian(ctx.from!.id, 31); // 30-day period + a day of grace
+      await ctx.reply('👑 <b>Welcome, Guardian!</b> Unlimited checks & unlocks are on, and I’ll keep watch for you. 💛', { parse_mode: 'HTML' });
+      await audit({
+        at: new Date().toISOString(),
+        telegramUserId: ctx.from!.id,
+        username: ctx.from?.username,
+        subjectKind: 'purchase',
+        subjectValue: `guardian:${GUARDIAN_STARS}stars`,
+        sourcesRun: ['payment'],
+        findingCount: 0,
+      });
+      return;
+    }
     if (pay.invoice_payload === 'badge30') {
       await setBadgePaid(ctx.from!.id, 30);
       await ctx.reply('✅ <b>You’re Verified for 30 days!</b> 🎉\nAnyone who checks you now sees your ✅ Verified badge. 💛', { parse_mode: 'HTML' });
@@ -1606,9 +1656,13 @@ async function main(): Promise<void> {
     if (me.username) botUsername = me.username;
     await bot.api.setMyCommands([
       { command: 'check', description: '🔍 Check someone new' },
+      { command: 'scam', description: '🕵️ Is this message a scam?' },
+      { command: 'verify', description: '✅ Verify your own profile' },
+      { command: 'wall', description: '🧱 Wall of red flags' },
       { command: 'balance', description: '💎 Your tokens' },
       { command: 'daily', description: '🎁 Claim free daily tokens' },
       { command: 'invite', description: '👯 Invite friends, earn tokens' },
+      { command: 'guardian', description: '👑 Go unlimited (Guardian)' },
       { command: 'watchlist', description: '👀 People you’re watching' },
       { command: 'help', description: '💛 How to use Checkmate' },
     ]);

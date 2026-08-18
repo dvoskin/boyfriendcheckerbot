@@ -75,7 +75,11 @@ interface Wallet {
   streak: number;
   referredBy?: number;
   invited: number[]; // user ids who joined via this user
+  guardianUntil?: string; // ISO — active "Guardian" subscription (unlimited checks)
 }
+
+/** Stars price for the Guardian monthly subscription (unlimited + monitoring). */
+export const GUARDIAN_STARS = 599;
 
 const FILE = () => join(config.dataDir, 'wallets.json');
 let wallets: Record<string, Wallet> = {};
@@ -129,10 +133,25 @@ export function isFree(id: number): boolean {
   return !config.tokenMetering || config.unlimitedUserIds.includes(id);
 }
 
+/** Does this user hold an active Guardian subscription (unlimited checks)? */
+export async function isGuardian(id: number): Promise<boolean> {
+  const w = await getWallet(id);
+  return Boolean(w.guardianUntil && Date.parse(w.guardianUntil) > Date.now());
+}
+
+/** Activate/extend the Guardian subscription for `days` more. */
+export async function setGuardian(id: number, days: number): Promise<void> {
+  const w = await getWallet(id);
+  const base = w.guardianUntil && Date.parse(w.guardianUntil) > Date.now() ? Date.parse(w.guardianUntil) : Date.now();
+  w.guardianUntil = new Date(base + days * 24 * 60 * 60 * 1000).toISOString();
+  await persist();
+}
+
 /** Try to spend; false if not enough (caller shows the "earn more" flow). */
 export async function spend(id: number, amount: number): Promise<boolean> {
   if (isFree(id)) return true; // free while testing / owner allowlist — never deduct
   const w = await getWallet(id);
+  if (w.guardianUntil && Date.parse(w.guardianUntil) > Date.now()) return true; // unlimited
   if (w.balance < amount) return false;
   w.balance -= amount;
   await persist();
