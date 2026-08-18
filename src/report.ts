@@ -253,7 +253,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   }
 
   // ── 3.5 The real him — the richest personal data, kept high ──────────────
-  const deep = all.filter((f) => f.source === 'enformion' && f.label !== 'Criminal record');
+  const deep = all.filter((f) => (f.source === 'enformion' && f.label !== 'Criminal record') || f.source === 'spokeo');
   if (deep.length) {
     const d = ['💜 <b>Who they really are</b>', ''];
     for (const f of deep) {

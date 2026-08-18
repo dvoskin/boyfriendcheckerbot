@@ -48,6 +48,10 @@ export const config = {
   emailRepKey: opt('EMAILREP_API_KEY'),
   // IPQualityScore — phone/email fraud + burner/disposable detection (free tier).
   ipqsKey: opt('IPQS_API_KEY'),
+  // Spokeo — deep people search (phone/email/name → relatives, addresses, aliases).
+  spokeoKey: opt('SPOKEO_API_KEY'),
+  // 1Lookup — reverse phone → identity + risk from 1000+ sources.
+  oneLookupKey: opt('ONELOOKUP_API_KEY'),
   dataDir: process.env.DATA_DIR ?? './data',
   // How often the watch loop re-checks each watched person, in minutes.
   watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),

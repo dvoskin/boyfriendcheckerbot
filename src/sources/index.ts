@@ -26,6 +26,7 @@ import { rdapSource } from './rdap.js';
 import { registrySource } from './registry.js';
 import { searchSource } from './search.js';
 import { secSource } from './sec.js';
+import { spokeoSource } from './spokeo.js';
 import { usernameSource } from './usernames.js';
 import { waybackSource } from './wayback.js';
 
@@ -64,4 +65,5 @@ export const ALL_SOURCES: Source[] = [
   piplSource,
   emailRepSource,
   ipqsSource,
+  spokeoSource,
 ];
