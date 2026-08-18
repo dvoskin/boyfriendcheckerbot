@@ -11,6 +11,7 @@ import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
 import { recordSearch, searchersOf } from './core/searchers.js';
+import { hasOptedIn, optIn } from './core/match.js';
 import { applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, type RevealKey, spend, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
@@ -36,6 +37,9 @@ const lastSearched = new Map<
 
 /** Users we asked "how do you know them?" — their next message is the label. */
 const pendingLabel = new Set<number>();
+
+/** Users composing an anonymous note to another matched user (relay target id). */
+const pendingRelay = new Map<number, number>();
 
 /** The bot's @username, for building referral links. Set at startup. */
 let botUsername = 'YourCheckmateBot';
@@ -413,6 +417,8 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
       .text('🚩 Flag them', 'flag')
       .text('🏷️ How you know them', 'label')
       .row()
+      .text('🤝 Are we dating the same person?', 'samematch')
+      .row()
       .text('🔍 Check someone else', 'check:new');
     await ctx.reply('💫 <b>What next?</b>', { parse_mode: 'HTML', reply_markup: actions });
 
@@ -676,6 +682,68 @@ async function main(): Promise<void> {
       const bal = await balanceOf(ctx.from.id);
       await ctx.reply(`🔓 <b>More to uncover</b> — you’ve got <b>${bal}</b> 🪙`, { parse_mode: 'HTML', reply_markup: kb });
     }
+  });
+
+  // "🤝 Are we dating the same person?" → opt into the match network for the last
+  // person searched. Double opt-in + anonymous relay — never an automatic reveal.
+  bot.callbackQuery('samematch', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const last = lastSearched.get(ctx.from.id);
+    if (!last) {
+      await ctx.reply('Check someone first, then tap 🤝 to see if anyone else has dated them.');
+      return;
+    }
+    const already = await hasOptedIn(ctx.from.id, last.keys).catch(() => false);
+    const matches = await optIn(ctx.from.id, last.keys).catch(() => [] as number[]);
+    if (matches.length === 0) {
+      await ctx.reply(
+        [
+          already ? '✅ You’re already on the list for this person.' : '✅ <b>You’re on the list.</b>',
+          '',
+          'Nobody else has checked this exact person yet — but the moment someone does, I’ll ping you both to compare notes (anonymously). 🤝',
+          '',
+          '<i>Your identity is never shared. Ever.</i>',
+        ].join('\n'),
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+    // A match! Offer BOTH sides an anonymous channel — neither name is revealed.
+    await ctx.reply(
+      [
+        `🤝 <b>Match found.</b> <b>${matches.length}</b> other ${matches.length === 1 ? 'person has' : 'people have'} checked this exact person too.`,
+        '',
+        'Want to compare notes? I’ll pass messages between you <b>completely anonymously</b> — no names, no numbers, nothing but what you choose to type.',
+      ].join('\n'),
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💬 Send them an anonymous note', `relay:${matches[0]}`) },
+    );
+    for (const other of matches) {
+      await bot.api
+        .sendMessage(
+          other,
+          [
+            '🤝 <b>Someone else just checked a person you looked into.</b>',
+            '',
+            'They might be dating the same person as you. Want to compare notes anonymously?',
+            '',
+            '<i>Nobody’s identity is ever shared.</i>',
+          ].join('\n'),
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💬 Send an anonymous note', `relay:${ctx.from.id}`) },
+        )
+        .catch(() => {});
+    }
+  });
+
+  // "💬 Send an anonymous note" → next text this user sends is relayed to the target.
+  bot.callbackQuery(/^relay:(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    pendingRelay.set(ctx.from.id, Number(ctx.match![1]));
+    await ctx.reply(
+      '💬 <b>Type your message</b> and I’ll pass it along anonymously.\n<i>Be kind and stick to your own experience — messages are between real people. Nothing you type reveals who you are.</i>',
+      { parse_mode: 'HTML' },
+    );
   });
 
   // "🔍 Check someone else" → straight back to the main menu, no typing.
@@ -1020,6 +1088,28 @@ async function main(): Promise<void> {
     if (!guard(ctx)) return;
     const text = ctx.message.text.trim();
     const uid = ctx.from!.id;
+
+    // Composing an anonymous note to a matched user → relay it, reveal nothing.
+    if (pendingRelay.has(uid) && !text.startsWith('/')) {
+      const target = pendingRelay.get(uid)!;
+      pendingRelay.delete(uid);
+      const sent = await bot.api
+        .sendMessage(
+          target,
+          [
+            '🕵️ <b>Anonymous note</b> from someone who checked the same person as you:',
+            '',
+            escapeHtml(text.slice(0, 900)),
+            '',
+            '<i>You can reply anonymously too 👇</i>',
+          ].join('\n'),
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💬 Reply anonymously', `relay:${uid}`) },
+        )
+        .then(() => true)
+        .catch(() => false);
+      await ctx.reply(sent ? '✅ Sent anonymously 💛 They can reply without ever seeing who you are.' : '😬 Couldn’t deliver that — they may have blocked the bot.');
+      return;
+    }
 
     // If they owe us a disambiguation pick, a bare number selects a candidate.
     const pending = pendingPick.get(uid);
