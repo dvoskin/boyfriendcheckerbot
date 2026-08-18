@@ -865,10 +865,11 @@ async function main(): Promise<void> {
   const enterChat = async (ctx: Context): Promise<void> => {
     resetTextModes(ctx.from!.id);
     pendingChat.add(ctx.from!.id);
-    await ctx.reply(
-      '💬 <b>Talk to me.</b> What’s going on with them? Vent, ask if something’s a red flag, or paste what they said — I’ve got you.\n<i>(Tap 🚪 Done or send /done when you’re finished.)</i>',
-      { parse_mode: 'HTML' },
-    );
+    const last = lastSearched.get(ctx.from!.id);
+    const opener = last
+      ? `💬 <b>Talk to me.</b> Still thinking about <b>${escapeHtml(last.seed.raw)}</b>? Tell me what’s on your mind — I’ve got the whole report in front of me.`
+      : '💬 <b>Talk to me.</b> What’s going on with them? Vent, ask if something’s a red flag, or paste what they said — I’ve got you.';
+    await ctx.reply(`${opener}\n<i>(Tap 🚪 Done or send /done when you’re finished.)</i>`, { parse_mode: 'HTML' });
   };
   bot.command('chat', (ctx) => (guard(ctx) ? enterChat(ctx) : undefined));
   bot.callbackQuery('chat', async (ctx) => {
@@ -1969,7 +1970,10 @@ async function main(): Promise<void> {
       const hist = chatHistory.get(uid) ?? [];
       hist.push({ role: 'user', content: text.slice(0, 1200) });
       await ctx.api.sendChatAction(ctx.chat.id, 'typing').catch(() => {});
-      const reply = await coachReply(hist).catch(() => null);
+      // Feed the coach whoever they just checked, so the chat feels connected.
+      const lastCtx = lastSearched.get(uid);
+      const chatContext = lastCtx ? `They recently checked "${lastCtx.seed.raw}". ${lastCtx.narrative ?? ''}`.trim() : undefined;
+      const reply = await coachReply(hist, chatContext).catch(() => null);
       if (!reply) {
         hist.pop();
         await ctx.reply('😬 Brain glitch — say that again?');

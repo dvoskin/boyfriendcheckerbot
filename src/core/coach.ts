@@ -13,9 +13,19 @@ import { config } from './config.js';
  */
 export type ChatTurn = { role: 'user' | 'assistant'; content: string };
 
-export async function coachReply(history: ChatTurn[]): Promise<string | null> {
+export async function coachReply(history: ChatTurn[], context?: string): Promise<string | null> {
   if (!config.anthropicKey) return null;
   const client = new Anthropic({ apiKey: config.anthropicKey });
+
+  const contextLines = context
+    ? [
+        '',
+        'CONTEXT — the user just ran a Checkmate report; here’s what it found. If they’re talking',
+        'about this person, use it naturally (don’t dump it back at them, just be informed). Never',
+        'invent beyond it:',
+        context.slice(0, 1500),
+      ]
+    : [];
 
   const msg = await client.messages.create({
     model: 'claude-sonnet-5',
@@ -37,6 +47,7 @@ export async function coachReply(history: ChatTurn[]): Promise<string | null> {
       'kindly, without being preachy. Don’t give medical/legal advice. 18+ only.',
       '',
       'Never invent facts about a specific person — if they want facts, tell them to run a check.',
+      ...contextLines,
     ].join('\n'),
     messages: history.map((t) => ({ role: t.role, content: t.content })),
   });
