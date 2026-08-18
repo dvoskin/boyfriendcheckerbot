@@ -17,7 +17,7 @@ import { badgeFor, claimProfile, myProfile, setBadgePaid, verifiedOwnerFor } fro
 import { addTokens, applyReferral, balanceOf, claimCharge, claimDaily, COST, grantStarter, GUARDIAN_FAIR_USE, GUARDIAN_STARS, inviteCount, isFree, isGuardian, refund, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
-import { chunkText, escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
+import { chunkText, escapeHtml, type LockedSection, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
 import { renderCardPng } from './media/card.js';
 import { generateDateQuestions } from './core/predate.js';
 import { analyzeScamText } from './core/scamtext.js';
@@ -518,24 +518,16 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
 
     // Everything the user can do next is a TAP, never a typed command. This is
     // the one-tap action hub attached to every report.
-    const missing = missingSelectors(seed, graph);
+    // Keep this SHORT — the audience gets overwhelmed by a wall of buttons.
+    // Four clear actions, plus a "more" tucked away for the power features.
     const actions = new InlineKeyboard()
-      .text('🔔 Watch 24/7', 'watch:last')
-      .text('📸 Add a photo', 'ask:image')
-      .row();
-    if (missing.email) actions.text('📧 Add their email', 'ask:email');
-    if (missing.phone) actions.text('📱 Add their phone', 'ask:phone');
-    if (missing.email || missing.phone) actions.row();
-    actions
-      .text('🖼️ Share card', 'sharecard')
-      .text('🎤 Questions to ask them', 'datequestions')
+      .text('🔍 Check someone else', 'check:new')
+      .text('🖼️ Share', 'sharecard')
       .row()
       .text('🚩 Flag them', 'flag')
-      .text('🏷️ How you know them', 'label')
+      .text('🔔 Watch', 'watch:last')
       .row()
-      .text('🤝 Are we dating the same person?', 'samematch')
-      .row()
-      .text('🔍 Check someone else', 'check:new');
+      .text('➕ More options', 'moreactions');
     await ctx.reply('💫 <b>What next?</b>', { parse_mode: 'HTML', reply_markup: actions });
 
     await audit({
@@ -1156,6 +1148,22 @@ async function main(): Promise<void> {
     for (let i = 0; i < chunks.length; i++) {
       await ctx.reply(chunks[i]!, { parse_mode: 'HTML', reply_markup: i === chunks.length - 1 ? kb : undefined });
     }
+  });
+
+  // "➕ More options" → the power features, tucked away so the main menu stays clean.
+  bot.callbackQuery('moreactions', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const kb = new InlineKeyboard()
+      .text('🎤 Questions to ask them', 'datequestions')
+      .row()
+      .text('📸 Add a photo', 'ask:image')
+      .text('📧 Add their email', 'ask:email')
+      .row()
+      .text('🤝 Are we dating the same person?', 'samematch')
+      .row()
+      .text('🏷️ How you know them', 'label');
+    await ctx.reply('➕ <b>More options</b>', { parse_mode: 'HTML', reply_markup: kb });
   });
 
   // "🔍 Check someone else" → straight back to the main menu, no typing.

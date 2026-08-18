@@ -1,5 +1,6 @@
 import { tryCharge } from '../core/budget.js';
 import { config } from '../core/config.js';
+import { decodeEntities } from '../core/text.js';
 import type { Finding, Source } from '../core/types.js';
 
 /**
@@ -46,7 +47,7 @@ interface Platform {
 }
 
 function decode(s: string): string {
-  return s.replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/\\u0026/g, '&');
+  return decodeEntities(s.replace(/\\u0026/g, '&'));
 }
 
 const PLATFORMS: Platform[] = [

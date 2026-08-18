@@ -208,7 +208,6 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   if (anyF((f) => f.source === 'finra' && /🔴/.test(f.title))) score -= 10;
   const relForScore = all.find((f) => f.source === 'enformion' && f.label === 'Relationship status')?.extra?.status;
   if (relForScore === 'married') score -= 30;
-  else if (relForScore === 'possibly') score -= 12;
   else if (relForScore === 'divorced') score -= 5;
   score -= dossier.signals.filter((s) => s.level === 'amber').length * 4;
   if (dossier.signals.some((s) => /thin or freshly/i.test(s.text))) score -= 8;
@@ -260,13 +259,12 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
     anyF((f) => f.source === 'enformion' && f.label === 'Criminal record')
   )
     red.push('Court / criminal record on file');
-  if (relStatus === 'married') red.push('💍 Marriage record — may NOT be single');
-  else if (relStatus === 'possibly') red.push('💍 Same-surname relative on file — possibly taken');
+  if (relStatus === 'married') red.push('💍 Marriage record on file — may not be single');
   if (anyF((f) => f.label === 'Synthetic media')) red.push('Photos may be AI-generated 🤖');
   if (anyF((f) => f.source === 'hibp' && /DATING|ADULT/i.test(f.title))) red.push('Account on a dating / adult site');
   if (anyF((f) => (f.source === 'ipqs' || f.source === 'emailrep') && /🔴/.test(f.title))) red.push('Email/phone looks risky (burner/fraud)');
 
-  if (hasDeep && relStatus === 'single') green.push('No marriage record — looks single 💚');
+  if (hasDeep && relStatus === 'single') green.push('No formal marriage record on file 💚');
   if (hasDeep) green.push('Identity matches public records ✅');
   if (confirmedAccts >= 2) green.push('Real, established online footprint');
   if (employer || occupation) green.push('Job / employer checks out 💼');
@@ -288,13 +286,7 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   if (city) facts.push(`📍 <b>Lives:</b> ${escapeHtml(city)}`);
   if (relStatus) {
     const rel =
-      relStatus === 'married'
-        ? '💍 Married — careful!'
-        : relStatus === 'possibly'
-          ? '💍 Possibly taken (same-surname relative on file)'
-          : relStatus === 'divorced'
-            ? '💔 Divorced'
-            : '💚 No marriage record (looks single)';
+      relStatus === 'married' ? '💍 Married — careful!' : relStatus === 'divorced' ? '💔 Divorced' : '💚 No marriage record on file';
     facts.push(`💘 <b>Status:</b> ${rel}`);
   }
   if (employer || occupation) facts.push(`💼 <b>Works:</b> ${escapeHtml([occupation, employer].filter(Boolean).join(' @ '))}`);
@@ -349,18 +341,15 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
     free.push(tips.join('\n'));
   }
 
-  // ── Build the four paywalled buckets. Each is only offered if it has data. ──
-  const locked: LockedSection[] = [];
-
-  // ☕ THE TEA — the AI honest read.
+  // ── THE READ — the AI's plain-English answer. FREE and prominent: this is the
+  // product. It reads all the messy raw data and tells the user what it means, in
+  // language the audience actually gets. The raw records become paid "receipts".
   if (dossier.narrative) {
-    locked.push({
-      key: 'tea',
-      label: `☕ The full tea`,
-      cost: REVEAL.tea,
-      chunks: chunk([`☕ <b>THE TEA</b> — <i>what it all actually means</i>\n\n${escapeHtml(dossier.narrative)}`]),
-    });
+    for (const c of chunk([`💬 <b>THE READ</b>\n\n${escapeHtml(dossier.narrative)}`])) free.push(c);
   }
+
+  // ── Paywalled buckets — the raw "receipts" behind the read. ──────────────────
+  const locked: LockedSection[] = [];
 
   // 🛡️ SAFETY — the highest-stakes bucket: criminal/court/registry/sanctions/scam.
   const safety = all.filter(
@@ -451,10 +440,23 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   });
   const strong = social.filter((f) => f.confidence >= 0.7);
   const weak = social.filter((f) => f.confidence < 0.7);
+  // Require the person's name to actually appear, so a search doesn't dump a
+  // colleague's or a random person's LinkedIn into "their" social profiles.
+  const nameTokens = seed.raw
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
   const socialSeen = new Set<string>();
   const socialProfiles = all.filter((f) => {
     if (f.source !== 'search' || !f.url) return false;
     if (!/(?<!\w)(?:instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com\//i.test(f.url)) return false;
+    // For NAME searches, keep only results where the name shows up in the title/url.
+    if (seed.kind === 'person' && nameTokens.length) {
+      const hay = `${f.title} ${f.url}`.toLowerCase();
+      const hits = nameTokens.filter((t) => hay.includes(t)).length;
+      if (hits < Math.min(2, nameTokens.length)) return false;
+    }
     if (socialSeen.has(f.url)) return false;
     socialSeen.add(f.url);
     return true;

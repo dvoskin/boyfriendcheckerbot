@@ -292,20 +292,18 @@ export function parseEnformionPerson(
       .map((d) => [spouseOf(d) && `💔 from ${spouseOf(d)}`, dateOf(d) && `on ${dateOf(d)}`, placeOf(d) && `in ${placeOf(d)}`].filter(Boolean).join(' '))
       .filter(Boolean);
 
-    // A formal marriage record OR an explicit spouse relative = married. A
-    // same-surname relative with no record = "possibly taken" (spouse or sibling).
+    // Only a FORMAL marriage record (or an explicitly spouse-labelled relative)
+    // sets "married". A bare same-surname relative is NOT called a partner here —
+    // it could be a sibling or parent; the AI read decides that using the ages.
     const hardMarried = marriageRecs.length > 0 || indHas('marriages', 'marriage', 'married') || Boolean(spouse);
     const divorcedRec = divorceRecs.length > 0 || indHas('divorces', 'divorce', 'divorced');
-    const possiblyTaken = !hardMarried && Boolean(sameSurnamePartner);
     const statusLine = hardMarried
       ? marriageLines.length
         ? `💍 Marriage record${marriageLines.length > 1 ? 's' : ''} found (${marriageLines.length})`
         : spouse
           ? `💍 Married — spouse on file: ${nameOf(spouse)}`
           : '💍 Marriage record on file'
-      : possiblyTaken
-        ? `💍 Possibly taken — ${sameSurnamePartner} shares their last name`
-        : '💚 No marriage record surfaced';
+      : '💚 No formal marriage record on file';
     findings.push({
       source: 'enformion',
       label: 'Relationship status',
@@ -313,16 +311,16 @@ export function parseEnformionPerson(
       detail: [
         ...marriageLines.slice(0, 4),
         ...(divorceLines.length ? divorceLines.slice(0, 4) : divorcedRec ? ['💔 Divorce record also on file'] : []),
-        possiblyTaken &&
-          `⚠️ ${sameSurnamePartner} shows up as a relative with the SAME last name — could be a spouse (or a sibling/parent). No formal marriage record surfaced, so confirm it.`,
-        !hardMarried && !possiblyTaken && 'No public marriage record came up — this does NOT fully rule it out (records lag and vary by state).',
-        'Public records aggregated nationwide — confirm before believing it.',
+        // Note the same-surname relative for the AI to weigh (spouse vs sibling), but
+        // don't declare it a partner in the deterministic status.
+        !hardMarried && sameSurnamePartner && `Note: ${sameSurnamePartner} is on file as a relative sharing their last name.`,
+        !hardMarried && 'No public marriage record came up — records lag and vary by state, so this doesn’t fully rule it out.',
       ]
         .filter(Boolean)
         .join('\n'),
       retrievedAt: ctx.now,
-      confidence: marriageLines.length ? 0.7 : possiblyTaken ? 0.5 : 0.55,
-      extra: { status: divorcedRec && !hardMarried && !possiblyTaken ? 'divorced' : hardMarried ? 'married' : possiblyTaken ? 'possibly' : 'single' },
+      confidence: marriageLines.length ? 0.7 : 0.55,
+      extra: { status: divorcedRec && !hardMarried ? 'divorced' : hardMarried ? 'married' : 'single' },
     });
 
     if (relatives.length) {
