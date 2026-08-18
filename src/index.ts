@@ -24,7 +24,7 @@ import { generateDateQuestions } from './core/predate.js';
 import { quizAt, randomQuizIndex, tipOfDay } from './core/content.js';
 import { type ChatTurn, coachReply } from './core/coach.js';
 import { analyzeScamText } from './core/scamtext.js';
-import { type Candidate, enformionCandidates, enformionSource } from './sources/enformion.js';
+import { type Candidate, enformionCandidates, enformionRaw, enformionSource } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
 
@@ -787,6 +787,31 @@ async function main(): Promise<void> {
       await ctx.reply(`ERROR: ${escapeHtml(err instanceof Error ? err.message : String(err))}`, { parse_mode: 'HTML' });
     }
   });
+
+  // Probe the dedicated Marriage / Criminal endpoints to confirm they respond and
+  // to see their field names. Usage: /probem Mikhail Parizher | Jersey City NJ
+  const probeDedicated = async (ctx: Context, which: 'marriage' | 'criminal') => {
+    if (!guard(ctx)) return;
+    const arg = ctx.match?.toString().trim();
+    if (!arg) return void (await ctx.reply(`Usage: /probe${which === 'marriage' ? 'm' : 'c'} First Last | City ST`));
+    const [name, city] = arg.split('|').map((s) => s.trim());
+    const parts = (name ?? '').split(/\s+/);
+    const st = city?.split(/\s+/).pop();
+    const body = { FirstName: parts[0], LastName: parts[parts.length - 1], ...(st ? { State: st } : {}) };
+    const paths = which === 'marriage' ? ['/MarriageSearch', '/Marriage/Search', '/Marriage'] : ['/CriminalSearch', '/CriminalSearchV2', '/Criminal/Search', '/Criminal'];
+    const types = which === 'marriage' ? ['Marriage', 'DevAPIMarriage', 'MarriageSearch'] : ['Criminal', 'CriminalV2', 'DevAPICriminalV2', 'DevAPICriminal'];
+    const data = await enformionRaw(paths, types, body).catch(() => null);
+    if (!data) return void (await ctx.reply('❌ No endpoint responded (all paths/types 404’d or errored).'));
+    const topKeys = Object.keys(data).join(', ');
+    const arrKey = Object.keys(data).find((k) => Array.isArray((data as Record<string, unknown>)[k]));
+    const first = arrKey ? ((data as Record<string, unknown[]>)[arrKey]![0] as Record<string, unknown>) : undefined;
+    await ctx.reply(
+      [`✅ responded.`, `top keys: <code>${escapeHtml(topKeys)}</code>`, arrKey ? `array "${arrKey}"[0] keys: <code>${escapeHtml(Object.keys(first ?? {}).join(', '))}</code>` : 'no array found'].join('\n\n').slice(0, 4000),
+      { parse_mode: 'HTML' },
+    );
+  };
+  bot.command('probem', (ctx) => probeDedicated(ctx, 'marriage'));
+  bot.command('probec', (ctx) => probeDedicated(ctx, 'criminal'));
 
   // Live Enformion probe — actually calls the API so we can see WHY deep data
   // (marriage/relatives) is or isn't coming back. Usage: /probe Mike Parizher | Ashburn VA

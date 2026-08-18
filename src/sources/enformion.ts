@@ -209,7 +209,7 @@ export const enformionSource: Source = {
 };
 
 /** Raw POST to an Enformion endpoint, tolerant of unknown paths/search-types. */
-async function enformionRaw(paths: string[], searchTypes: string[], body: Obj): Promise<Obj | null> {
+export async function enformionRaw(paths: string[], searchTypes: string[], body: Obj): Promise<Obj | null> {
   for (const path of paths) {
     for (const st of searchTypes) {
       let res: Response;
