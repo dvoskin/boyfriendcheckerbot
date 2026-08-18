@@ -42,6 +42,15 @@ const lastSearched = new Map<
 /** Monotonic report id so a paid reveal tapped on an OLD report can't charge for / reveal the wrong person. */
 let reportSeq = 0;
 
+/** Cache the report (holds the paywalled section text) with a bound so memory can't grow forever. */
+function rememberReport(uid: number, val: Parameters<typeof lastSearched.set>[1]): void {
+  lastSearched.set(uid, val);
+  if (lastSearched.size > 2000) {
+    const oldest = lastSearched.keys().next().value;
+    if (oldest !== undefined) lastSearched.delete(oldest);
+  }
+}
+
 /** Users we asked "how do you know them?" — their next message is the label. */
 const pendingLabel = new Set<number>();
 
@@ -466,7 +475,7 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     const findingTotal = graph.nodes.reduce((n, node) => n + node.findings.length, 0);
     if (findingTotal === 0) {
       await refund(ctx.from!.id, cost); // nothing found → don't charge for an empty search
-      lastSearched.set(ctx.from!.id, { rid, seed, keys });
+      rememberReport(ctx.from!.id, { rid, seed, keys });
       await ctx.reply(
         [
           '🤷‍♀️ Hmm, came up empty on that one. <i>(No tokens spent.)</i>',
@@ -491,7 +500,7 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     for (const chunk of parts.free) {
       await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
     }
-    lastSearched.set(ctx.from!.id, { rid, seed, keys, locked: parts.locked, unlocked: new Set(), summary: parts.summary, narrative: dossier.narrative ?? undefined });
+    rememberReport(ctx.from!.id, { rid, seed, keys, locked: parts.locked, unlocked: new Set(), summary: parts.summary, narrative: dossier.narrative ?? undefined });
 
     // The money engine: offer each juicy section as a one-tap token unlock.
     if (!parts.thin && parts.locked.length) {

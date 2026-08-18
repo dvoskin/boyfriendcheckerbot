@@ -76,6 +76,8 @@ interface Wallet {
   referredBy?: number;
   invited: number[]; // user ids who joined via this user
   guardianUntil?: string; // ISO — active "Guardian" subscription (unlimited checks)
+  refDay?: string; // YYYY-MM-DD of the current referral-reward window
+  refCount?: number; // referrer rewards granted in that window
 }
 
 /** Stars price for the Guardian monthly subscription (unlimited + monitoring). */
@@ -213,6 +215,9 @@ export async function claimDaily(id: number): Promise<DailyResult> {
   return { ok: true, gained, streak: w.streak, balance: w.balance };
 }
 
+/** Max referral rewards a single account can earn per day (anti-farming). */
+const REFERRAL_DAILY_CAP = 10;
+
 /** Record a referral once, rewarding both sides. Returns true if newly applied. */
 export async function applyReferral(newUserId: number, referrerId: number): Promise<boolean> {
   if (newUserId === referrerId) return false;
@@ -220,8 +225,17 @@ export async function applyReferral(newUserId: number, referrerId: number): Prom
   if (nw.referredBy || nw.seenStarter) return false; // only brand-new users, once
   const rw = await getWallet(referrerId);
   nw.referredBy = referrerId;
-  nw.balance += TOKENS.referred;
-  rw.balance += TOKENS.referrer;
+  nw.balance += TOKENS.referred; // the joiner always gets their welcome bonus
+  // Rate-limit the REFERRER reward so a script can't farm it with fake accounts.
+  const day = today();
+  if (rw.refDay !== day) {
+    rw.refDay = day;
+    rw.refCount = 0;
+  }
+  if ((rw.refCount ?? 0) < REFERRAL_DAILY_CAP) {
+    rw.refCount = (rw.refCount ?? 0) + 1;
+    rw.balance += TOKENS.referrer;
+  }
   if (!rw.invited.includes(newUserId)) rw.invited.push(newUserId);
   await persist();
   return true;
