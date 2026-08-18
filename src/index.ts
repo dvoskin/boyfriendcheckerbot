@@ -37,8 +37,10 @@ const pendingCity = new Map<number, string>();
 /** The last person each user searched — so a "🚩 Flag" tap knows who to flag. */
 const lastSearched = new Map<
   number,
-  { seed: Subject; keys: string[]; locked?: LockedSection[]; unlocked?: Set<RevealKey>; summary?: ReportSummary; narrative?: string }
+  { rid: number; seed: Subject; keys: string[]; locked?: LockedSection[]; unlocked?: Set<RevealKey>; summary?: ReportSummary; narrative?: string }
 >();
+/** Monotonic report id so a paid reveal tapped on an OLD report can't charge for / reveal the wrong person. */
+let reportSeq = 0;
 
 /** Users we asked "how do you know them?" — their next message is the label. */
 const pendingLabel = new Set<number>();
@@ -460,10 +462,11 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
       await ctx.reply(line, { parse_mode: 'HTML' });
     }
 
+    const rid = ++reportSeq;
     const findingTotal = graph.nodes.reduce((n, node) => n + node.findings.length, 0);
     if (findingTotal === 0) {
       await refund(ctx.from!.id, cost); // nothing found → don't charge for an empty search
-      lastSearched.set(ctx.from!.id, { seed, keys });
+      lastSearched.set(ctx.from!.id, { rid, seed, keys });
       await ctx.reply(
         [
           '🤷‍♀️ Hmm, came up empty on that one. <i>(No tokens spent.)</i>',
@@ -488,13 +491,13 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     for (const chunk of parts.free) {
       await ctx.reply(chunk, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
     }
-    lastSearched.set(ctx.from!.id, { seed, keys, locked: parts.locked, unlocked: new Set(), summary: parts.summary, narrative: dossier.narrative ?? undefined });
+    lastSearched.set(ctx.from!.id, { rid, seed, keys, locked: parts.locked, unlocked: new Set(), summary: parts.summary, narrative: dossier.narrative ?? undefined });
 
     // The money engine: offer each juicy section as a one-tap token unlock.
     if (!parts.thin && parts.locked.length) {
       const kb = new InlineKeyboard();
       parts.locked.forEach((s, i) => {
-        kb.text(`${s.label} · ${s.cost}🪙`, `reveal:${s.key}`);
+        kb.text(`${s.label} · ${s.cost}🪙`, `reveal:${rid}:${s.key}`);
         if (i % 2 === 1) kb.row();
       });
       const bal = await balanceOf(ctx.from!.id);
@@ -794,15 +797,22 @@ async function main(): Promise<void> {
   });
 
   // A locked section tapped → spend tokens (once) and reveal it. The money engine.
-  bot.callbackQuery(/^reveal:(.+)$/, async (ctx) => {
+  // Callback carries the report id so an OLD report's button can't charge for /
+  // reveal the WRONG person after a newer search overwrote the slot.
+  bot.callbackQuery(/^reveal:(\d+):(.+)$/, async (ctx) => {
     if (!guard(ctx)) {
       await ctx.answerCallbackQuery().catch(() => {});
       return;
     }
-    const key = ctx.match![1] as RevealKey;
+    const rid = Number(ctx.match![1]);
+    const key = ctx.match![2] as RevealKey;
     const last = lastSearched.get(ctx.from.id);
-    const section = last?.locked?.find((s) => s.key === key);
-    if (!last || !section) {
+    if (!last || last.rid !== rid) {
+      await ctx.answerCallbackQuery({ text: 'That’s from an earlier check — run them again to unlock 🔍', show_alert: true }).catch(() => {});
+      return;
+    }
+    const section = last.locked?.find((s) => s.key === key);
+    if (!section) {
       await ctx.answerCallbackQuery('Run a fresh check first 💫').catch(() => {});
       return;
     }
@@ -827,7 +837,7 @@ async function main(): Promise<void> {
     if (remaining.length) {
       const kb = new InlineKeyboard();
       remaining.forEach((s, i) => {
-        kb.text(`${s.label} · ${s.cost}🪙`, `reveal:${s.key}`);
+        kb.text(`${s.label} · ${s.cost}🪙`, `reveal:${rid}:${s.key}`);
         if (i % 2 === 1) kb.row();
       });
       const bal = await balanceOf(ctx.from.id);
