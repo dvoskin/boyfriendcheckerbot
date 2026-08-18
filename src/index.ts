@@ -9,7 +9,7 @@ import { analyzeImage } from './media/provenance.js';
 import { reverseImageSearch } from './media/reverse.js';
 import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
-import { addFlag, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
+import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, renderFindings, renderGraph, renderImageReport, renderProgress, renderReport, synthesize } from './report.js';
@@ -28,6 +28,9 @@ const pendingCity = new Map<number, string>();
 
 /** The last person each user searched — so a "🚩 Flag" tap knows who to flag. */
 const lastSearched = new Map<number, { seed: Subject; keys: string[] }>();
+
+/** Users we asked "how do you know them?" — their next message is the label. */
+const pendingLabel = new Set<number>();
 
 /** The tap-to-choose input menu — removes the guesswork of free-text parsing. */
 const mainMenu = new InlineKeyboard()
@@ -283,16 +286,19 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
         .filter((f) => f.source === 'enformion' && f.label === 'Phones')
         .flatMap((f) => (f.detail ?? '').match(/\d[\d\-() ]{8,}\d/g) ?? []),
     });
-    const flagSummary = await lookupFlags(keys).catch(() => ({ total: 0, byCategory: [] }));
+    const flagSummary = await lookupFlags(keys).catch(() => ({ total: 0, byCategory: [], labels: [] }));
     if (flagSummary.total > 0) {
       const lines = [
         '🚨 <b>COMMUNITY ALERT</b>',
-        `${flagSummary.total} ${flagSummary.total === 1 ? 'person has' : 'people have'} flagged <b>${escapeHtml(seed.raw)}</b>:`,
-        '',
-        ...flagSummary.byCategory.map((c) => `${FLAG_LABELS[c.category]} — ${c.count}`),
-        '',
-        '<i>Shared by other users, unverified — take it seriously but confirm for yourself.</i>',
+        `${flagSummary.total} ${flagSummary.total === 1 ? 'person in the network knows' : 'people in the network know'} <b>${escapeHtml(seed.raw)}</b>:`,
       ];
+      if (flagSummary.labels.length) {
+        lines.push('', '🏷️ <b>Known as:</b>', ...flagSummary.labels.slice(0, 6).map((l) => `• ${escapeHtml(l.label)}${l.count > 1 ? ` (${l.count})` : ''}`));
+      }
+      if (flagSummary.byCategory.length) {
+        lines.push('', '🚩 <b>Flagged for:</b>', ...flagSummary.byCategory.map((c) => `${FLAG_LABELS[c.category]} — ${c.count}`));
+      }
+      lines.push('', '<i>Shared by other users, unverified — take it seriously but confirm for yourself.</i>');
       await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
     }
 
@@ -315,8 +321,14 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
 
     // Offer to add their own experience to the network — the viral loop.
     lastSearched.set(ctx.from!.id, { seed, keys });
-    await ctx.reply('💬 Dated them or know something? Help the next girl 👇', {
-      reply_markup: new InlineKeyboard().text('🚩 Flag this person', 'flag'),
+    if (flagSummary.labels.length > 0) {
+      // (labels already shown in the alert above)
+    }
+    await ctx.reply('💬 Know them? Help the next person 👇', {
+      reply_markup: new InlineKeyboard()
+        .text('🚩 Flag this person', 'flag')
+        .row()
+        .text('🏷️ How you know them', 'label'),
     });
 
     await audit({
@@ -429,6 +441,21 @@ async function main(): Promise<void> {
       parse_mode: 'HTML',
       reply_markup: kb,
     });
+  });
+
+  // "🏷️ How you know them" → ask for a short label (the legal GetContact feature).
+  bot.callbackQuery('label', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    if (!lastSearched.get(ctx.from.id)) {
+      await ctx.reply('Search someone first, then tap 🏷️ on their report.');
+      return;
+    }
+    pendingLabel.add(ctx.from.id);
+    await ctx.reply(
+      'What name do you know them by, or how are they saved in your phone?\n<i>(one short label — e.g. “Mike from Hinge” or “Danny — realtor”)</i>',
+      { parse_mode: 'HTML' },
+    );
   });
 
   // A category picked → record the flag against the last-searched person.
@@ -699,6 +726,17 @@ async function main(): Promise<void> {
         `🤔 I don’t know that command. Skip the slash — just send their <b>@username</b>, <b>name</b>, <b>email</b>, <b>phone</b>, or a <b>photo</b> 📸`,
         { parse_mode: 'HTML' },
       );
+      return;
+    }
+
+    // Answering "how do you know them?" → store the community label.
+    if (pendingLabel.has(uid)) {
+      pendingLabel.delete(uid);
+      const last = lastSearched.get(uid);
+      if (last) {
+        await addLabel(uid, last.keys, text);
+        await ctx.reply(`✅ Saved — the community now knows them as “${escapeHtml(text.trim().slice(0, 60))}”. You helped someone 💛`, { parse_mode: 'HTML' });
+      }
       return;
     }
 

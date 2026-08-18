@@ -34,6 +34,8 @@ interface Flag {
   at: string;
   keys: string[];
   category: FlagCategory;
+  /** Optional: how this user knows the person (the legal "GetContact" label). */
+  label?: string;
 }
 
 const FILE = () => join(config.dataDir, 'flags.json');
@@ -98,24 +100,47 @@ export async function addFlag(by: number, keys: string[], category: FlagCategory
   await persist();
 }
 
+/**
+ * Add how the user personally knows this person — the LEGAL "how is this number
+ * known" feature. Consented, one person at a time, contributed only by someone
+ * who knows them (never a bulk address-book upload).
+ */
+export async function addLabel(by: number, keys: string[], label: string): Promise<void> {
+  const clean = label.trim().slice(0, 60);
+  if (keys.length === 0 || clean.length < 2) return;
+  await ensureLoaded();
+  flags = flags.filter((f) => !(f.by === by && f.label && f.keys.some((k) => keys.includes(k))));
+  flags.push({ by, at: new Date().toISOString(), keys, category: 'good', label: clean });
+  await persist();
+}
+
 export interface FlagSummary {
   total: number;
   byCategory: { category: FlagCategory; count: number }[];
+  labels: { label: string; count: number }[];
 }
 
-/** Aggregate flags matching any of these keys, counting DISTINCT users per category. */
+/** Aggregate flags matching any of these keys, counting DISTINCT users. */
 export async function lookupFlags(keys: string[]): Promise<FlagSummary> {
   await ensureLoaded();
-  if (keys.length === 0) return { total: 0, byCategory: [] };
+  if (keys.length === 0) return { total: 0, byCategory: [], labels: [] };
   const keySet = new Set(keys);
   const matched = flags.filter((f) => f.keys.some((k) => keySet.has(k)));
 
   const perCat = new Map<FlagCategory, Set<number>>();
+  const perLabel = new Map<string, Set<number>>();
   for (const f of matched) {
-    if (!perCat.has(f.category)) perCat.set(f.category, new Set());
-    perCat.get(f.category)!.add(f.by);
+    if (f.label) {
+      const key = f.label.toLowerCase();
+      if (!perLabel.has(key)) perLabel.set(key, new Set());
+      perLabel.get(key)!.add(f.by);
+    } else {
+      if (!perCat.has(f.category)) perCat.set(f.category, new Set());
+      perCat.get(f.category)!.add(f.by);
+    }
   }
   const byCategory = CATEGORY_ORDER.filter((c) => perCat.has(c)).map((c) => ({ category: c, count: perCat.get(c)!.size }));
+  const labels = [...perLabel.entries()].map(([label, users]) => ({ label, count: users.size })).sort((a, b) => b.count - a.count);
   const total = new Set(matched.map((f) => f.by)).size;
-  return { total, byCategory };
+  return { total, byCategory, labels };
 }
