@@ -20,6 +20,7 @@ import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from '
 import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
 import { renderCardPng } from './media/card.js';
 import { generateDateQuestions } from './core/predate.js';
+import { analyzeScamText } from './core/scamtext.js';
 import { type Candidate, enformionCandidates } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
@@ -50,6 +51,9 @@ const pendingScreenshot = new Set<number>();
 
 /** Users claiming their own profile — their next message is their own name. */
 const pendingVerify = new Set<number>();
+
+/** Users who tapped "Is this a scam?" — their next message is the text to judge. */
+const pendingScam = new Set<number>();
 
 /** Stars price (⭐) for 30 days of the ✅ Verified badge — the second-audience revenue. */
 const BADGE_STARS = 599;
@@ -87,6 +91,8 @@ const mainMenu = new InlineKeyboard()
   .row()
   .text('📸 Photo', 'ask:image')
   .text('🧠 Read a screenshot', 'ask:screenshot')
+  .row()
+  .text('🕵️ Is this a scam?', 'scamcheck')
   .row()
   .text('✅ Verify yourself', 'verifyme')
   .row()
@@ -909,6 +915,22 @@ async function main(): Promise<void> {
       });
   });
 
+  // "🕵️ Is this a scam?" → next message is judged for romance-scam signals.
+  bot.callbackQuery('scamcheck', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    pendingScam.add(ctx.from.id);
+    await ctx.reply(
+      '🕵️ <b>Paste the message</b> they sent you and I’ll tell you if it smells like a scam.\n<i>I read only what you paste — nothing stored.</i>',
+      { parse_mode: 'HTML' },
+    );
+  });
+  bot.command('scam', (ctx) => {
+    if (!guard(ctx)) return;
+    pendingScam.add(ctx.from!.id);
+    return ctx.reply('🕵️ Paste the message and I’ll check it for scam signals.');
+  });
+
   // "🎤 Questions to ask them" → AI-generated verification questions for the date.
   bot.callbackQuery('datequestions', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
@@ -1395,6 +1417,25 @@ async function main(): Promise<void> {
         parse_mode: 'HTML',
         reply_markup: new InlineKeyboard().text('💚 Yes, single', 'vsingle:yes').text('💍 No', 'vsingle:no'),
       });
+      return;
+    }
+
+    // "Is this a scam?" → judge the pasted message, don't treat it as a search.
+    if (pendingScam.has(uid) && !text.startsWith('/')) {
+      pendingScam.delete(uid);
+      if (!(await spend(uid, COST.username))) {
+        await earnMore(ctx);
+        return;
+      }
+      const note = await ctx.reply('🕵️ Reading the message…');
+      const verdict = await analyzeScamText(text).catch(() => null);
+      await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+      await ctx.reply(
+        verdict
+          ? `🕵️ <b>SCAM CHECK</b>\n\n${escapeHtml(verdict)}\n\n<i>💡 One read of one message — trust your gut too.</i>`
+          : '😬 Couldn’t read that — try again in a moment.',
+        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🕵️ Check another', 'scamcheck').row().text('🔍 Check the person', 'check:new') },
+      );
       return;
     }
 
