@@ -186,7 +186,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
         : '🔴 serious red flags';
 
   // ── The VERDICT + flag scoreboard — the screenshottable heart of the report.
-  // Verdict-first because that's what she screenshots and drops in the group chat.
+  // Verdict-first because that's what the user screenshots and drops in the group chat.
   const verdict = thin
     ? '🤷 NOT ENOUGH TO CALL IT'
     : score >= 75
@@ -225,7 +225,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   if (!red.length && !thin && green.length) green.push('Nothing scary jumped out ✨');
 
   const card = [
-    '♟️ <b>CHECKMATE</b>  ·  <i>your bestie did the digging</i>',
+    '♟️ <b>CHECKMATE</b>  ·  <i>here’s the full read</i>',
     '━━━━━━━━━━━━━━━',
     `🎯 <b>${escapeHtml(seed.raw)}</b>`,
     '',
@@ -252,7 +252,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
   if (green.length) for (const g of green) card.push(`   • ${g}`);
   else card.push('   <i>· none confirmed yet</i>');
 
-  card.push('', '📸 <i>screenshot this before you text him back</i>');
+  card.push('', '📸 <i>screenshot this before your next move</i>');
   sections.push(card.join('\n'));
 
   // ── 1.7 Thin-footprint callout — turn an empty result into a next step ───
@@ -266,7 +266,7 @@ export function renderReport(seed: Subject, graph: GraphResult, dossier: Dossier
     sections.push(tips.join('\n'));
   }
 
-  // ── 2. The tea — the bestie-voice read, right after the verdict ──────────
+  // ── 2. The tea — the warm plain-English read, right after the verdict ────
   if (dossier.narrative) sections.push(`☕ <b>THE TEA</b> — <i>what it all actually means</i>\n\n${escapeHtml(dossier.narrative)}`);
 
   // ── 3. Is he safe? — highest-stakes, never diluted ───────────────────────

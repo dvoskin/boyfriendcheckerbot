@@ -307,7 +307,7 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     return;
   }
 
-  const status = await ctx.reply('💅 On it, bestie — give me a sec…', { parse_mode: 'HTML' });
+  const status = await ctx.reply('🔍 On it — give me a sec…', { parse_mode: 'HTML' });
   let step = 0;
   const tick = setInterval(() => {
     step = (step + 1) % TRACE_STEPS.length;
@@ -361,11 +361,11 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
         {
           parse_mode: 'HTML',
           reply_markup: new InlineKeyboard()
-            .text('📧 His email', 'ask:email')
-            .text('📱 His phone', 'ask:phone')
+            .text('📧 Their email', 'ask:email')
+            .text('📱 Their phone', 'ask:phone')
             .row()
-            .text('📸 His photo', 'ask:image')
-            .text('💬 His @username', 'ask:username'),
+            .text('📸 Their photo', 'ask:image')
+            .text('💬 Their @username', 'ask:username'),
         },
       );
       return;
@@ -382,17 +382,17 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
     const missing = missingSelectors(seed, graph);
     const actions = new InlineKeyboard()
       .text('🔔 Watch 24/7', 'watch:last')
-      .text('📸 Add his photo', 'ask:image')
+      .text('📸 Add a photo', 'ask:image')
       .row();
-    if (missing.email) actions.text('📧 Add his email', 'ask:email');
-    if (missing.phone) actions.text('📱 Add his phone', 'ask:phone');
+    if (missing.email) actions.text('📧 Add their email', 'ask:email');
+    if (missing.phone) actions.text('📱 Add their phone', 'ask:phone');
     if (missing.email || missing.phone) actions.row();
     actions
       .text('🚩 Flag them', 'flag')
       .text('🏷️ How you know them', 'label')
       .row()
       .text('🔍 Check someone else', 'check:new');
-    await ctx.reply('💫 <b>What next, bestie?</b>', { parse_mode: 'HTML', reply_markup: actions });
+    await ctx.reply('💫 <b>What next?</b>', { parse_mode: 'HTML', reply_markup: actions });
 
     await audit({
       at: new Date().toISOString(),
@@ -881,7 +881,7 @@ async function main(): Promise<void> {
     const isPhoto = Boolean(ctx.message?.photo);
     const note = await ctx.reply(
       isPhoto
-        ? '📸 Looking at his photo… psst — next time send it as a <b>File 📎</b> so I can read the hidden data (camera, location, AI-fakery). Compressed photos lose all that.'
+        ? '📸 Looking at the photo… psst — next time send it as a <b>File 📎</b> so I can read the hidden data (camera, location, AI-fakery). Compressed photos lose all that.'
         : '📸 Reading the photo — camera, location, AI-fakery check…',
       { parse_mode: 'HTML' },
     );
@@ -911,10 +911,10 @@ async function main(): Promise<void> {
           ...(isLast
             ? {
                 reply_markup: new InlineKeyboard()
-                  .text('🧑 Now check his name', 'ask:person')
+                  .text('🧑 Now check their name', 'ask:person')
                   .row()
-                  .text('📧 His email', 'ask:email')
-                  .text('📱 His phone', 'ask:phone')
+                  .text('📧 Their email', 'ask:email')
+                  .text('📱 Their phone', 'ask:phone')
                   .row()
                   .text('🔍 Check someone else', 'check:new'),
               }
@@ -947,11 +947,11 @@ async function main(): Promise<void> {
       const chosen = pending.candidates[Number(text) - 1];
       pendingPick.delete(uid);
       if (!chosen) {
-        await ctx.reply('🤔 That number wasn’t on the list — send his name again.');
+        await ctx.reply('🤔 That number wasn’t on the list — send the name again.');
         return;
       }
       const seed = detectSubject(pending.raw);
-      seed.hints = chosen.state; // pin the search to the person she picked
+      seed.hints = chosen.state; // pin the search to the person they picked
       await ctx.reply(
         `💅 On it — digging into <b>${escapeHtml(chosen.name)}</b>${chosen.city ? ` from ${escapeHtml(chosen.city)}` : ''}…`,
         { parse_mode: 'HTML' },
