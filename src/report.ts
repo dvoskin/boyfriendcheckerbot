@@ -211,6 +211,15 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   else if (relForScore === 'divorced') score -= 5;
   score -= dossier.signals.filter((s) => s.level === 'amber').length * 4;
   if (dossier.signals.some((s) => /thin or freshly/i.test(s.text))) score -= 8;
+
+  // HONESTY CAP: we can't call someone "green/safe" if we never ran a real
+  // criminal/court check. A verified criminal source (UniCourt or Enformion's
+  // criminal endpoint) is required to score above "proceed with caution".
+  const criminalChecked = all.some((f) => f.source === 'unicourt') || all.some((f) => f.source === 'enformion' && f.label === 'Criminal record');
+  // Marriage counts as "checked" only when we actually found a record — a bare
+  // "no marriage" from a partial index isn't a real all-states check.
+  const marriageChecked = relForScore === 'married' || relForScore === 'divorced';
+  if (!criminalChecked) score = Math.min(score, 72); // never a clean bill without a real check
   score = Math.max(3, Math.min(100, score));
 
   // Data richness — a no-data person must NOT read as "looking good" (that implies
@@ -264,12 +273,17 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   if (anyF((f) => f.source === 'hibp' && /DATING|ADULT/i.test(f.title))) red.push('Account on a dating / adult site');
   if (anyF((f) => (f.source === 'ipqs' || f.source === 'emailrep') && /🔴/.test(f.title))) red.push('Email/phone looks risky (burner/fraud)');
 
-  if (hasDeep && relStatus === 'single') green.push('No formal marriage record on file 💚');
-  if (hasDeep) green.push('Identity matches public records ✅');
+  // GREEN = positive evidence only. "No record found" is NOT a green flag (we
+  // often didn't actually run that check) — that was the false-confidence bug.
+  if (hasDeep) green.push('Identity confirmed in public records ✅');
   if (confirmedAccts >= 2) green.push('Real, established online footprint');
   if (employer || occupation) green.push('Job / employer checks out 💼');
-  if (age) green.push('Age lines up with the records');
-  if (!red.length && !thin && green.length) green.push('Nothing scary jumped out ✨');
+  if (age && city) green.push('Age & location line up');
+
+  // Honest "not checked yet" caveats — so a report never *implies* clean/single.
+  const caveats: string[] = [];
+  if (!criminalChecked) caveats.push('⚠️ Criminal & court records NOT checked (needs a court source)');
+  if (!marriageChecked && relStatus !== 'married' && relStatus !== 'divorced') caveats.push('⚠️ Marriage records NOT fully checked — “single” is unconfirmed');
 
   const card = [
     '♟️ <b>CHECKMATE</b>  ·  <i>here’s the full read</i>',
@@ -286,7 +300,7 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   if (city) facts.push(`📍 <b>Lives:</b> ${escapeHtml(city)}`);
   if (relStatus) {
     const rel =
-      relStatus === 'married' ? '💍 Married — careful!' : relStatus === 'divorced' ? '💔 Divorced' : '💚 No marriage record on file';
+      relStatus === 'married' ? '💍 Married — careful!' : relStatus === 'divorced' ? '💔 Divorced' : marriageChecked ? '💚 No marriage record' : '❓ Not confirmed';
     facts.push(`💘 <b>Status:</b> ${rel}`);
   }
   if (employer || occupation) facts.push(`💼 <b>Works:</b> ${escapeHtml([occupation, employer].filter(Boolean).join(' @ '))}`);
@@ -299,6 +313,10 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
   card.push('', `💚 <b>GREEN FLAGS (${green.length})</b>`);
   if (green.length) for (const g of green) card.push(`   • ${g}`);
   else card.push('   <i>· none confirmed yet</i>');
+  if (caveats.length) {
+    card.push('', '🔎 <b>NOT YET CHECKED</b>');
+    for (const c of caveats) card.push(`   • ${c}`);
+  }
 
   card.push('', '📸 <i>screenshot this before your next move</i>');
   free.push(card.join('\n'));
