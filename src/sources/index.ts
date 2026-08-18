@@ -11,7 +11,7 @@ import { wikipediaSource } from './wikipedia.js';
 import { courtListenerSource } from './courtlistener.js';
 import { crtshSource } from './crtsh.js';
 import { emailRepSource } from './emailrep.js';
-import { enformionSource } from './enformion.js';
+import { enformionEmailSource, enformionPhoneSource, enformionSource } from './enformion.js';
 import { ipqsSource } from './ipqs.js';
 import { fecSource } from './fec.js';
 import { finraSource } from './finra.js';
@@ -50,6 +50,8 @@ export const ALL_SOURCES: Source[] = [
   phoneSource,
   registrySource,
   enformionSource,
+  enformionPhoneSource,
+  enformionEmailSource,
   fecSource,
   openCorporatesSource,
   adverseSource,

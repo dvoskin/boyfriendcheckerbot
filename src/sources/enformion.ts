@@ -182,9 +182,27 @@ export const enformionSource: Source = {
         : [];
     if (people.length === 0) return [];
 
-    const p = people[0]!;
-    const findings: Finding[] = [];
-    const displayName = nameOf(p) || subject.raw;
+    return parseEnformionPerson(people[0]!, ctx, {
+      subjectRaw: subject.raw,
+      np,
+      peopleCount: people.length,
+      stateHint,
+    });
+  },
+};
+
+/**
+ * Turn ONE Enformion person record into report findings — shared by Person
+ * Search, Reverse Phone and Contact (email) enrichment, so every search type
+ * returns the same rich marriage / criminal / relatives / phones / emails data.
+ */
+export function parseEnformionPerson(
+  p: Obj,
+  ctx: { now: string },
+  opts: { subjectRaw: string; np?: { first: string; last: string; middle?: string }; peopleCount: number; stateHint?: string | null },
+): Finding[] {
+  const findings: Finding[] = [];
+  const displayName = nameOf(p) || opts.subjectRaw;
 
     // Wrong-person guard. Aggregators fall back to a "closest" record when there
     // is no real match — which is how a search for "Ariel Voskin" returned
@@ -193,15 +211,16 @@ export const enformionSource: Source = {
     // name can be anglicised), but Ariel→Michael is a different human. If the
     // first name doesn't line up, refuse to present the record.
     const returnedFirst = (str(get(get(p, 'Name', 'name'), 'FirstName', 'firstName')) ?? displayName.split(/\s+/)[0] ?? '').toLowerCase();
-    // Nickname-aware: "Mike" matches "Mikhail"/"Michael", "Dan" matches "Daniel".
-    const firstOk = !returnedFirst || firstNameMatches(np.first, returnedFirst);
+    // Wrong-person guard only applies to NAME searches (we have a name to match).
+    // Phone/email searches have no name to compare, so we trust the top match.
+    const firstOk = !opts.np || !returnedFirst || firstNameMatches(opts.np.first, returnedFirst);
     if (!firstOk) {
       return [
         {
           source: 'enformion',
           label: 'Deep background',
-          title: `🤷‍♀️ No confident records match for ${subject.raw}`,
-          detail: `The closest record is a different person (${displayName}) — so I’m NOT showing their family, phones or addresses as his. Try adding his state (e.g. "${subject.raw} | NY") or his exact legal name.`,
+          title: `🤷‍♀️ No confident records match for ${opts.subjectRaw}`,
+          detail: `The closest record is a different person (${displayName}) — so I’m NOT showing their family, phones or addresses as theirs. Try adding a state (e.g. "${opts.subjectRaw} | NY") or the exact legal name.`,
           retrievedAt: ctx.now,
           confidence: 0.4,
         },
@@ -222,12 +241,12 @@ export const enformionSource: Source = {
         where && `Lives in: ${where}`,
         dob && `Birthday on file: ${dob}`,
         akas.length && `Also goes by: ${akas.slice(0, 4).join(', ')}`,
-        people.length > 1 && `⚠️ ${people.length} people match this name — make sure it’s the right one.`,
+        opts.peopleCount > 1 && `⚠️ ${opts.peopleCount} people match this name — make sure it’s the right one.`,
       ]
         .filter(Boolean)
         .join('\n'),
       retrievedAt: ctx.now,
-      confidence: stateHint ? 0.75 : 0.6,
+      confidence: opts.stateHint ? 0.75 : 0.6,
       extra: { age, city: where },
     });
 
@@ -425,5 +444,79 @@ export const enformionSource: Source = {
     }
 
     return findings;
+}
+
+/**
+ * Shared Enformion POST. Tries candidate endpoint paths (their REST paths aren't
+ * fully published) and returns the person records, however the response nests
+ * them. A 404 just falls through to the next candidate path.
+ */
+async function enformionSearch(paths: string[], searchType: string, body: Obj): Promise<Obj[]> {
+  for (const path of paths) {
+    let res: Response;
+    try {
+      res = await fetch(`https://devapi.enformion.com${path}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'galaxy-ap-name': config.enformionName!,
+          'galaxy-ap-password': config.enformionPassword!,
+          'galaxy-search-type': searchType,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      continue; // network/timeout on this path — try the next
+    }
+    if (res.status === 404) continue;
+    if (res.status === 401 || res.status === 403) throw new Error('Enformion rejected the credentials (check AP name/password)');
+    if (!res.ok) throw new Error(`Enformion HTTP ${res.status}`);
+    const data = (await res.json()) as Obj;
+    const people = arr(get(data, 'persons', 'Persons', 'records', 'Records', 'results', 'Results'));
+    if (people.length) return people;
+    const single = get(data, 'person', 'Person'); // some endpoints return a single top match
+    if (single && !Array.isArray(single) && typeof single === 'object') return [single];
+    return Array.isArray(data) ? data : [];
+  }
+  return [];
+}
+
+/**
+ * Reverse Phone → the full deep-background profile. Makes a PHONE search return
+ * the same marriage/criminal/relatives data a name search does.
+ */
+export const enformionPhoneSource: Source = {
+  id: 'enformion-phone',
+  label: 'Deep background (phone)',
+  accepts: ['phone'],
+  async run(subject, ctx) {
+    if (!config.enformionName || !config.enformionPassword) return null;
+    const digits = subject.value.replace(/\D/g, '');
+    if (digits.length < 10) return null;
+    if (!(await tryCharge('enformion'))) return null;
+    const people = await enformionSearch(['/ReversePhoneSearch', '/PhoneSearch', '/Phone/Search'], 'ReversePhone', { Phone: digits.slice(-10) });
+    if (people.length === 0) return [];
+    return parseEnformionPerson(people[0]!, ctx, { subjectRaw: subject.raw, peopleCount: people.length });
+  },
+};
+
+/**
+ * Email → the full deep-background profile via Contact Enrichment, so an EMAIL
+ * search also returns identity, marriage, criminal, relatives, phones.
+ */
+export const enformionEmailSource: Source = {
+  id: 'enformion-email',
+  label: 'Deep background (email)',
+  accepts: ['email'],
+  async run(subject, ctx) {
+    if (!config.enformionName || !config.enformionPassword) return null;
+    const email = subject.value.trim().toLowerCase();
+    if (!email.includes('@')) return null;
+    if (!(await tryCharge('enformion'))) return null;
+    const people = await enformionSearch(['/Contact/Enrich', '/ContactEnrichment', '/Email/Enrich'], 'DevAPIContactEnrich', { Email: email });
+    if (people.length === 0) return [];
+    return parseEnformionPerson(people[0]!, ctx, { subjectRaw: subject.raw, peopleCount: people.length });
   },
 };
