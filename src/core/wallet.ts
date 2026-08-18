@@ -48,6 +48,26 @@ export const REVEAL = {
 };
 export type RevealKey = keyof typeof REVEAL;
 
+/**
+ * Token packs sold for Telegram Stars — the fast-money rail (no card processor
+ * that can ban a "background check" product, live in-chat, first sale today).
+ * `stars` is the price in Telegram Stars (⭐, ~$0.013–0.015 each); `tokens` is
+ * what the user receives. A middle pack is badged "Most Popular" as the decoy.
+ */
+export interface TokenPack {
+  id: string;
+  label: string;
+  stars: number;
+  tokens: number;
+  tag?: string;
+}
+export const TOKEN_PACKS: TokenPack[] = [
+  { id: 'taste', label: 'Taste', stars: 99, tokens: 60 },
+  { id: 'popular', label: 'Most Popular', stars: 299, tokens: 220, tag: '🔥' },
+  { id: 'value', label: 'Best Value', stars: 599, tokens: 500, tag: '💎' },
+  { id: 'guardian', label: 'Guardian', stars: 1299, tokens: 1200, tag: '👑' },
+];
+
 interface Wallet {
   balance: number;
   seenStarter: boolean;

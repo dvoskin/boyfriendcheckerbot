@@ -12,7 +12,7 @@ import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
 import { recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
-import { applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, isFree, type RevealKey, spend, TOKENS } from './core/wallet.js';
+import { addTokens, applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, isFree, type RevealKey, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, synthesize } from './report.js';
@@ -867,12 +867,66 @@ async function main(): Promise<void> {
     await ctx.answerCallbackQuery().catch(() => {});
     if (guard(ctx)) await doInvite(ctx);
   });
+  // "💎 Buy tokens" → show the packs, priced in Telegram Stars.
   bot.callbackQuery('buy', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
+    const kb = new InlineKeyboard();
+    for (const p of TOKEN_PACKS) {
+      kb.text(`${p.tag ? p.tag + ' ' : ''}${p.tokens} tokens · ${p.stars}⭐`, `pack:${p.id}`).row();
+    }
     await ctx.reply(
-      '💎 <b>Token packs are coming very soon!</b>\nFor now, load up free with /daily and /invite — you can stack a big balance 💛',
-      { parse_mode: 'HTML', reply_markup: earnKb() },
+      ['💎 <b>Top up with Telegram Stars</b> ⭐', '', 'Instant, in-app, no card needed. Pick a pack 👇'].join('\n'),
+      { parse_mode: 'HTML', reply_markup: kb },
     );
+  });
+  bot.command('buy', (ctx) => (guard(ctx) ? ctx.reply('💎 Tap below to top up 👇', { reply_markup: new InlineKeyboard().text('💎 Buy tokens', 'buy') }) : undefined));
+
+  // A pack chosen → send a Telegram Stars invoice (currency XTR, no provider token).
+  bot.callbackQuery(/^pack:(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const pack = TOKEN_PACKS.find((p) => p.id === ctx.match![1]);
+    if (!pack) return;
+    await ctx.api
+      .sendInvoice(
+        ctx.chat!.id,
+        `${pack.tokens} Checkmate tokens`,
+        `${pack.tokens} tokens to unlock reports, checks and reveals.`,
+        `pack:${pack.id}`, // payload — used to credit the right pack on success
+        'XTR', // Telegram Stars
+        [{ label: `${pack.tokens} tokens`, amount: pack.stars }],
+      )
+      .catch(async (err) => {
+        console.error('sendInvoice failed:', err);
+        await ctx.reply('😬 Couldn’t open the payment sheet — try again in a moment.');
+      });
+  });
+
+  // Telegram asks us to approve the charge — we must answer within 10s.
+  bot.on('pre_checkout_query', async (ctx) => {
+    await ctx.answerPreCheckoutQuery(true).catch(() => {});
+  });
+
+  // Payment succeeded → credit the tokens.
+  bot.on('message:successful_payment', async (ctx) => {
+    const pay = ctx.message.successful_payment;
+    const pack = TOKEN_PACKS.find((p) => `pack:${p.id}` === pay.invoice_payload);
+    if (!pack) return;
+    await addTokens(ctx.from!.id, pack.tokens);
+    const bal = await balanceOf(ctx.from!.id);
+    await ctx.reply(
+      `✅ <b>Payment received — thank you!</b> 💛\n+${pack.tokens} tokens added. You’ve got <b>${bal}</b> 💎\n\nGo check someone 👇`,
+      { parse_mode: 'HTML', reply_markup: mainMenu },
+    );
+    await audit({
+      at: new Date().toISOString(),
+      telegramUserId: ctx.from!.id,
+      username: ctx.from?.username,
+      subjectKind: 'purchase',
+      subjectValue: `${pack.id}:${pack.stars}stars`,
+      sourcesRun: ['payment'],
+      findingCount: pack.tokens,
+    });
   });
 
   bot.command('agree', async (ctx) => {
