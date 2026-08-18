@@ -369,13 +369,27 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
       (f.source === 'enformion' && f.label === 'Criminal record'),
   );
   if (safety.length) {
-    safety.sort((a, b) => b.confidence - a.confidence);
+    // Split real hits from clean checks. Hits get their detail; clean checks are a
+    // tight one-line checklist — no more "no match, but not a guarantee" x8.
+    const hits = safety.filter((f) => /🔴|🚨|⚠️/.test(f.title)).sort((a, b) => b.confidence - a.confidence);
+    const clears = safety.filter((f) => !/🔴|🚨|⚠️/.test(f.title));
     const s = ['🛡️ <b>Safety check</b>', ''];
-    for (const f of safety) {
-      s.push(f.url ? `• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>` : `• ${escapeHtml(f.title)}`);
-      const first = f.detail?.split('\n')[0];
-      if (first) s.push(`  <i>${escapeHtml(first)}</i>`);
+    if (hits.length) {
+      s.push('<b>⚠️ Worth a look:</b>');
+      for (const f of hits) {
+        s.push(f.url ? `• <a href="${escapeHtml(f.url)}">${escapeHtml(f.title)}</a>` : `• ${escapeHtml(f.title)}`);
+        const first = f.detail?.split('\n')[0];
+        if (first) s.push(`  <i>${escapeHtml(first)}</i>`);
+      }
+      s.push('');
     }
+    if (clears.length) {
+      s.push('<b>✅ Came back clean:</b>');
+      // Strip the leading ✅ and any trailing "for <name>" so it reads as a crisp checklist.
+      for (const f of clears) s.push(`• ${escapeHtml(f.title.replace(/^✅\s*/, '').replace(/\s+for\s+.+$/i, ''))}`);
+      s.push('');
+    }
+    s.push('<i>Records vary by state and some are sealed, so a clean check isn’t a legal clearance — but no red flags is a good sign.</i>');
     locked.push({ key: 'safety', label: '🛡️ Safety & records', cost: REVEAL.safety, chunks: chunk([s.join('\n')]) });
   }
 
@@ -400,6 +414,8 @@ export function renderReportParts(seed: Subject, graph: GraphResult, dossier: Do
       )
     )
       return false;
+    // Social-media links belong in the Social section — don't duplicate them here.
+    if (f.url && /(?<!\w)(?:instagram|facebook|tiktok|twitter|x|linkedin|threads)\.com\//i.test(f.url)) return false;
     const key = f.url ?? f.title;
     if (recSeen.has(key)) return false;
     recSeen.add(key);
