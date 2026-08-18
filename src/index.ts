@@ -10,6 +10,7 @@ import { reverseImageSearch } from './media/reverse.js';
 import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
+import { recordSearch, searchersOf } from './core/searchers.js';
 import { applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, type RevealKey, spend, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
@@ -336,6 +337,9 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
         .filter((f) => f.source === 'enformion' && f.label === 'Phones')
         .flatMap((f) => (f.detail ?? '').match(/\d[\d\-() ]{8,}\d/g) ?? []),
     });
+    // Remember this user checked this person, so we can ping them if the person
+    // is later flagged by the community — the pull-back loop.
+    await recordSearch(ctx.from!.id, keys).catch(() => {});
     const flagSummary = await lookupFlags(keys).catch(() => ({ total: 0, byCategory: [], labels: [] }));
     if (flagSummary.total > 0) {
       const lines = [
@@ -576,6 +580,24 @@ async function main(): Promise<void> {
       `✅ Flagged <b>${escapeHtml(last.seed.raw)}</b> as “${escapeHtml(FLAG_LABELS[category])}”. The next person who checks them will see it. You just helped someone 💛`,
       { parse_mode: 'HTML' },
     );
+
+    // Pull-back alert: ping everyone else who checked this person (not the flagger).
+    const others = await searchersOf(last.keys, ctx.from.id).catch(() => []);
+    for (const uid of others) {
+      await bot.api
+        .sendMessage(
+          uid,
+          [
+            '🚨 <b>Heads up.</b>',
+            '',
+            `Someone you checked recently just got flagged by the community: <b>${escapeHtml(FLAG_LABELS[category])}</b>.`,
+            '',
+            '<i>Another user shared their own experience — unverified, but worth knowing. Re-run them anytime to see the latest.</i>',
+          ].join('\n'),
+          { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔍 Check someone', 'check:new') },
+        )
+        .catch(() => {});
+    }
   });
 
   // Menu button tapped → prompt for that exact input type, no guessing.
@@ -874,6 +896,7 @@ async function main(): Promise<void> {
     try {
       const graph = await buildGraph(ALL_SOURCES, seed, { maxDepth: 2, maxNodes: 18 });
       await addWatch(ctx.from!.id, seed.kind, seed.value, seed.raw, graph.nodes.map((n) => n.id));
+      await recordSearch(ctx.from!.id, subjectKeys(seed)).catch(() => {});
       await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
       await ctx.reply(
         `✅ Watching <b>${escapeHtml(seed.raw)}</b>. I’ll ping you if new accounts, domains, or changes show up. Every ~${Math.round(config.watchIntervalMin / 60) || 1}h.\n\nStop anytime with  <code>/unwatch ${escapeHtml(seed.raw)}</code>`,
