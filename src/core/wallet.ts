@@ -153,6 +153,16 @@ export async function spend(id: number, amount: number): Promise<boolean> {
   return true;
 }
 
+/**
+ * Give back tokens for a paid action that failed or returned nothing. Only
+ * credits users who were actually charged (not free-mode / Guardian), so a
+ * refund never gifts free tokens.
+ */
+export async function refund(id: number, amount: number): Promise<void> {
+  if (isFree(id) || (await isGuardian(id))) return;
+  await addTokens(id, amount);
+}
+
 export async function addTokens(id: number, amount: number): Promise<void> {
   const w = await getWallet(id);
   w.balance += amount;

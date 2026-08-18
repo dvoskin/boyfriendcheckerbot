@@ -35,7 +35,26 @@ export interface ReportParts {
 }
 
 export function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Escape quotes too — the same helper feeds href="…" attributes, and an
+  // unescaped " there breaks the WHOLE message under Telegram's strict HTML mode.
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/** Split arbitrary text on line/space boundaries to respect Telegram's 4096 cap. */
+export function chunkText(text: string): string[] {
+  if (text.length <= TELEGRAM_LIMIT) return [text];
+  const out: string[] = [];
+  let cur = '';
+  for (const line of text.split('\n')) {
+    if (cur.length + line.length + 1 > TELEGRAM_LIMIT) {
+      if (cur) out.push(cur);
+      cur = line.length > TELEGRAM_LIMIT ? line.slice(0, TELEGRAM_LIMIT) : line;
+    } else {
+      cur += (cur ? '\n' : '') + line;
+    }
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
 }
 
 /** Live progress line, edited in place while sources are still landing. */

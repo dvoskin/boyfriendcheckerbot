@@ -14,10 +14,10 @@ import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, recentF
 import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
 import { badgeFor, claimProfile, myProfile, setBadgePaid, verifiedOwnerFor } from './core/profiles.js';
-import { addTokens, applyReferral, balanceOf, claimCharge, claimDaily, COST, grantStarter, GUARDIAN_STARS, inviteCount, isFree, isGuardian, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
+import { addTokens, applyReferral, balanceOf, claimCharge, claimDaily, COST, grantStarter, GUARDIAN_STARS, inviteCount, isFree, isGuardian, refund, type RevealKey, setGuardian, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
-import { escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
+import { chunkText, escapeHtml, type LockedSection, missingSelectors, renderFindings, renderGraph, renderImageReport, renderProgress, renderReportParts, type ReportSummary, synthesize } from './report.js';
 import { renderCardPng } from './media/card.js';
 import { generateDateQuestions } from './core/predate.js';
 import { analyzeScamText } from './core/scamtext.js';
@@ -279,17 +279,27 @@ async function handleLookup(ctx: Context, subject: Subject): Promise<void> {
 
   const ticker = setInterval(() => void flush(), 800);
 
-  const results = await runSources(
-    ALL_SOURCES,
-    subject,
-    { now: new Date().toISOString(), hints: subject.hints },
-    {
-      onResult: (r) => {
-        done.push(r);
-        dirty = true;
+  let results;
+  try {
+    results = await runSources(
+      ALL_SOURCES,
+      subject,
+      { now: new Date().toISOString(), hints: subject.hints },
+      {
+        onResult: (r) => {
+          done.push(r);
+          dirty = true;
+        },
       },
-    },
-  );
+    );
+  } catch (err) {
+    clearInterval(ticker);
+    await ctx.api.deleteMessage(status.chat.id, status.message_id).catch(() => {});
+    await refund(ctx.from!.id, cost);
+    await ctx.reply('😬 Something glitched on my end — try again in a moment. (No tokens spent.)');
+    console.error('handleLookup error:', err);
+    return;
+  }
 
   clearInterval(ticker);
   await flush(true);
@@ -425,10 +435,11 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
 
     const findingTotal = graph.nodes.reduce((n, node) => n + node.findings.length, 0);
     if (findingTotal === 0) {
+      await refund(ctx.from!.id, cost); // nothing found → don't charge for an empty search
       lastSearched.set(ctx.from!.id, { seed, keys });
       await ctx.reply(
         [
-          '🤷‍♀️ Hmm, came up empty on that one.',
+          '🤷‍♀️ Hmm, came up empty on that one. <i>(No tokens spent.)</i>',
           '',
           'Could mean they keep a low profile — or I just need a better angle. Give me one more thing to go on 👇',
         ].join('\n'),
@@ -501,7 +512,8 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
   } catch (err) {
     clearInterval(tick);
     await ctx.api.deleteMessage(status.chat.id, status.message_id).catch(() => {});
-    await ctx.reply('😬 Something glitched on my end — try again in a moment.');
+    await refund(ctx.from!.id, cost); // our failure, not theirs — give the tokens back
+    await ctx.reply('😬 Something glitched on my end — try again in a moment. (No tokens spent.)');
     console.error('trace error:', err);
   }
 }
@@ -976,12 +988,16 @@ async function main(): Promise<void> {
     const ctxStr = [last.narrative, last.summary && `Verdict: ${last.summary.verdict}`].filter(Boolean).join('\n');
     const qs = await generateDateQuestions(ctxStr).catch(() => null);
     await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
-    await ctx.reply(
-      qs
-        ? `🎤 <b>What to ask on the date</b>\n<i>Slip these in casually — you’ll know fast if their story holds up.</i>\n\n${escapeHtml(qs)}`
-        : '😬 Couldn’t generate those right now — try again in a moment.',
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔍 Check someone else', 'check:new') },
-    );
+    if (!qs) {
+      await refund(ctx.from.id, COST.username);
+      await ctx.reply('😬 Couldn’t generate those right now — try again in a moment. (No tokens spent.)');
+      return;
+    }
+    const kb = new InlineKeyboard().text('🔍 Check someone else', 'check:new');
+    const chunks = chunkText(`🎤 <b>What to ask on the date</b>\n<i>Slip these in casually — you’ll know fast if their story holds up.</i>\n\n${escapeHtml(qs)}`);
+    for (let i = 0; i < chunks.length; i++) {
+      await ctx.reply(chunks[i]!, { parse_mode: 'HTML', reply_markup: i === chunks.length - 1 ? kb : undefined });
+    }
   });
 
   // "🔍 Check someone else" → straight back to the main menu, no typing.
@@ -1401,18 +1417,20 @@ async function main(): Promise<void> {
         const mime: ImageMime = /png/.test(mimeRaw) ? 'image/png' : /webp/.test(mimeRaw) ? 'image/webp' : /gif/.test(mimeRaw) ? 'image/gif' : 'image/jpeg';
         const read = await analyzeScreenshot(buf, mime).catch(() => null);
         await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
-        await ctx.reply(
-          read
-            ? `🧠 <b>SCREENSHOT READ</b>\n\n${escapeHtml(read)}\n\n<i>💡 This reads only what you sent — one data point, not proof. Trust your gut.</i>`
-            : '😬 Couldn’t read that one — make sure the text is clear and try again.',
-          {
-            parse_mode: 'HTML',
-            reply_markup: new InlineKeyboard().text('🧠 Read another', 'ask:screenshot').row().text('🔍 Check the person', 'check:new'),
-          },
-        );
+        if (!read) {
+          await refund(ctx.from!.id, COST.image); // couldn't read → give the tokens back
+          await ctx.reply('😬 Couldn’t read that one — make sure the text is clear and try again. (No tokens spent.)');
+          return;
+        }
+        const kb = new InlineKeyboard().text('🧠 Read another', 'ask:screenshot').row().text('🔍 Check the person', 'check:new');
+        const chunks = chunkText(`🧠 <b>SCREENSHOT READ</b>\n\n${escapeHtml(read)}\n\n<i>💡 This reads only what you sent — one data point, not proof. Trust your gut.</i>`);
+        for (let i = 0; i < chunks.length; i++) {
+          await ctx.reply(chunks[i]!, { parse_mode: 'HTML', reply_markup: i === chunks.length - 1 ? kb : undefined });
+        }
       } catch {
         await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
-        await ctx.reply('😬 Something glitched reading that — try again in a moment.');
+        await refund(ctx.from!.id, COST.image);
+        await ctx.reply('😬 Something glitched reading that — try again in a moment. (No tokens spent.)');
       }
       return;
     }
@@ -1475,7 +1493,10 @@ async function main(): Promise<void> {
         findingCount: findings.length,
       });
     } catch (err) {
-      await ctx.reply(`Image analysis failed: ${err instanceof Error ? err.message : String(err)}`);
+      await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+      await refund(ctx.from!.id, COST.image);
+      await ctx.reply('😬 Couldn’t analyse that photo — try again in a moment. (No tokens spent.)');
+      console.error('image analysis error:', err);
     }
   });
 
@@ -1507,12 +1528,16 @@ async function main(): Promise<void> {
       const note = await ctx.reply('🕵️ Reading the message…');
       const verdict = await analyzeScamText(text).catch(() => null);
       await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
-      await ctx.reply(
-        verdict
-          ? `🕵️ <b>SCAM CHECK</b>\n\n${escapeHtml(verdict)}\n\n<i>💡 One read of one message — trust your gut too.</i>`
-          : '😬 Couldn’t read that — try again in a moment.',
-        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🕵️ Check another', 'scamcheck').row().text('🔍 Check the person', 'check:new') },
-      );
+      if (!verdict) {
+        await refund(uid, COST.username);
+        await ctx.reply('😬 Couldn’t read that — try again in a moment. (No tokens spent.)');
+        return;
+      }
+      const kb = new InlineKeyboard().text('🕵️ Check another', 'scamcheck').row().text('🔍 Check the person', 'check:new');
+      const chunks = chunkText(`🕵️ <b>SCAM CHECK</b>\n\n${escapeHtml(verdict)}\n\n<i>💡 One read of one message — trust your gut too.</i>`);
+      for (let i = 0; i < chunks.length; i++) {
+        await ctx.reply(chunks[i]!, { parse_mode: 'HTML', reply_markup: i === chunks.length - 1 ? kb : undefined });
+      }
       return;
     }
 
