@@ -13,6 +13,7 @@ import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
 import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
+import { badgeFor, claimProfile, myProfile, setBadgePaid } from './core/profiles.js';
 import { addTokens, applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, isFree, type RevealKey, spend, TOKEN_PACKS, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
@@ -45,6 +46,12 @@ const pendingRelay = new Map<number, number>();
 
 /** Users who tapped "read a screenshot" — their next image is AI-analysed, not catfish-checked. */
 const pendingScreenshot = new Set<number>();
+
+/** Users claiming their own profile — their next message is their own name. */
+const pendingVerify = new Set<number>();
+
+/** Stars price (⭐) for 30 days of the ✅ Verified badge — the second-audience revenue. */
+const BADGE_STARS = 599;
 
 /** The bot's @username, for building referral links. Set at startup. */
 let botUsername = 'YourCheckmateBot';
@@ -79,6 +86,8 @@ const mainMenu = new InlineKeyboard()
   .row()
   .text('📸 Photo', 'ask:image')
   .text('🧠 Read a screenshot', 'ask:screenshot')
+  .row()
+  .text('✅ Verify yourself', 'verifyme')
   .row()
   .text('💎 My tokens', 'balance')
   .text('🎁 Free daily', 'daily')
@@ -347,6 +356,23 @@ async function runTrace(ctx: Context, seed: Subject): Promise<void> {
         .filter((f) => f.source === 'enformion' && f.label === 'Phones')
         .flatMap((f) => (f.detail ?? '').match(/\d[\d\-() ]{8,}\d/g) ?? []),
     });
+    // Did the person being checked CLAIM their own Checkmate profile? Show it —
+    // the consent-based badge (the second-audience product) surfaces here.
+    const badge = await badgeFor(keys).catch(() => null);
+    if (badge) {
+      const head = badge.verified ? '✅ <b>VERIFIED BY CHECKMATE</b>' : '🪪 <b>They claimed their profile</b>';
+      await ctx.reply(
+        [
+          head,
+          `They say they’re <b>${badge.single ? 'single 💚' : 'not single'}</b>${badge.verified ? ` — verified ${escapeHtml(badge.since)}` : ' (free self-claim, unverified)'}.`,
+          badge.verified ? '' : '<i>They haven’t paid to verify it — take it as a claim, not proof.</i>',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        { parse_mode: 'HTML' },
+      );
+    }
+
     // Remember this user checked this person, so we can ping them if the person
     // is later flagged by the community — the pull-back loop.
     await recordSearch(ctx.from!.id, keys).catch(() => {});
@@ -802,6 +828,73 @@ async function main(): Promise<void> {
     }
   });
 
+  // ── "Claim & Clear" — the second paying audience (people being checked) ──
+  bot.callbackQuery('verifyme', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    pendingVerify.add(ctx.from.id);
+    await ctx.reply(
+      [
+        '✅ <b>Claim your own profile</b>',
+        '',
+        'Tired of getting side-eyed on apps like this? Claim your name so anyone who checks you sees you’re real and up-front.',
+        '',
+        'Send me <b>your full name</b> (add your city for a sharper match — <code>John Smith | Miami</code>).',
+        '<i>No ID, no selfie, nothing stored — just your name and what you choose to share.</i>',
+      ].join('\n'),
+      { parse_mode: 'HTML' },
+    );
+  });
+  bot.command('verify', (ctx) => {
+    if (!guard(ctx)) return;
+    pendingVerify.add(ctx.from!.id);
+    return ctx.reply('✅ Send me <b>your full name</b> (+ city) to claim your profile.', { parse_mode: 'HTML' });
+  });
+
+  bot.callbackQuery(/^vsingle:(yes|no)$/, async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const mine = await myProfile(ctx.from.id);
+    if (!mine) {
+      await ctx.reply('Claim your profile first — tap ✅ Verify yourself.');
+      return;
+    }
+    await claimProfile(ctx.from.id, mine.name, mine.keys, ctx.match![1] === 'yes');
+    await ctx.reply(
+      [
+        `✅ <b>Profile claimed.</b> You’re showing as <b>${ctx.match![1] === 'yes' ? 'single 💚' : 'not single'}</b>.`,
+        '',
+        'Right now it’s a free self-claim. Lock in the real <b>✅ Verified by Checkmate</b> badge so checkers trust it — and get pinged when someone checks you 👀',
+      ].join('\n'),
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text(`✅ Get Verified — ${BADGE_STARS}⭐ / 30 days`, 'buybadge'),
+      },
+    );
+  });
+
+  bot.callbackQuery('buybadge', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!guard(ctx)) return;
+    const mine = await myProfile(ctx.from.id);
+    if (!mine) {
+      await ctx.reply('Claim your profile first — tap ✅ Verify yourself.');
+      return;
+    }
+    await ctx.api
+      .sendInvoice(
+        ctx.chat!.id,
+        '✅ Checkmate Verified badge — 30 days',
+        'Show a ✅ Verified badge to anyone who checks you, and get alerts when you’re checked.',
+        'badge30',
+        'XTR',
+        [{ label: 'Verified badge · 30 days', amount: BADGE_STARS }],
+      )
+      .catch(async () => {
+        await ctx.reply('😬 Couldn’t open the payment sheet — try again in a moment.');
+      });
+  });
+
   // "🔍 Check someone else" → straight back to the main menu, no typing.
   bot.callbackQuery('check:new', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
@@ -959,9 +1052,23 @@ async function main(): Promise<void> {
     await ctx.answerPreCheckoutQuery(true).catch(() => {});
   });
 
-  // Payment succeeded → credit the tokens.
+  // Payment succeeded → credit the tokens (or activate the badge).
   bot.on('message:successful_payment', async (ctx) => {
     const pay = ctx.message.successful_payment;
+    if (pay.invoice_payload === 'badge30') {
+      await setBadgePaid(ctx.from!.id, 30);
+      await ctx.reply('✅ <b>You’re Verified for 30 days!</b> 🎉\nAnyone who checks you now sees your ✅ Verified badge. 💛', { parse_mode: 'HTML' });
+      await audit({
+        at: new Date().toISOString(),
+        telegramUserId: ctx.from!.id,
+        username: ctx.from?.username,
+        subjectKind: 'purchase',
+        subjectValue: `badge30:${BADGE_STARS}stars`,
+        sourcesRun: ['payment'],
+        findingCount: 0,
+      });
+      return;
+    }
     const pack = TOKEN_PACKS.find((p) => `pack:${p.id}` === pay.invoice_payload);
     if (!pack) return;
     await addTokens(ctx.from!.id, pack.tokens);
@@ -1238,6 +1345,19 @@ async function main(): Promise<void> {
     if (!guard(ctx)) return;
     const text = ctx.message.text.trim();
     const uid = ctx.from!.id;
+
+    // Claiming your own profile → next message is your name.
+    if (pendingVerify.has(uid) && !text.startsWith('/')) {
+      pendingVerify.delete(uid);
+      const seed = detectSubject(text);
+      const keys = subjectKeys(seed);
+      await claimProfile(uid, seed.raw, keys, true);
+      await ctx.reply(`✅ Got it — <b>${escapeHtml(seed.raw)}</b>. Are you single?`, {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('💚 Yes, single', 'vsingle:yes').text('💍 No', 'vsingle:no'),
+      });
+      return;
+    }
 
     // Composing an anonymous note to a matched user → relay it, reveal nothing.
     if (pendingRelay.has(uid) && !text.startsWith('/')) {
