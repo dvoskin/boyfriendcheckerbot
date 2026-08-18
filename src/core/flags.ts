@@ -91,6 +91,31 @@ export function subjectKeys(
   return [...keys];
 }
 
+export interface WallItem {
+  category: FlagCategory;
+  at: string;
+  state?: string; // rough locality only — never a name
+}
+
+/**
+ * The anonymized "Wall of Red Flags" feed — recent community flags with NO names,
+ * just the category and (if known) a US state. Opinion-framed and identity-free,
+ * so it's a daily-open doomscroll without the defamation of naming anyone.
+ */
+export async function recentFlags(limit = 20): Promise<WallItem[]> {
+  await ensureLoaded();
+  return flags
+    .filter((f) => !f.label) // real flags only, not "known as" labels
+    .slice(-limit * 2)
+    .reverse()
+    .map((f) => {
+      const nameKey = f.keys.find((k) => k.startsWith('name:'));
+      const st = nameKey?.split('|')[1]?.toUpperCase();
+      return { category: f.category, at: f.at, state: st && st.length === 2 ? st : undefined };
+    })
+    .slice(0, limit);
+}
+
 export async function addFlag(by: number, keys: string[], category: FlagCategory): Promise<void> {
   if (keys.length === 0) return;
   await ensureLoaded();

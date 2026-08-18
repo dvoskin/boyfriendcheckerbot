@@ -10,7 +10,7 @@ import { reverseImageSearch } from './media/reverse.js';
 import { analyzeScreenshot, type ImageMime } from './media/screenshot.js';
 import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
-import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
+import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, recentFlags, subjectKeys } from './core/flags.js';
 import { checkStats, recordSearch, searchersOf } from './core/searchers.js';
 import { hasOptedIn, optIn } from './core/match.js';
 import { badgeFor, claimProfile, myProfile, setBadgePaid, verifiedOwnerFor } from './core/profiles.js';
@@ -93,6 +93,7 @@ const mainMenu = new InlineKeyboard()
   .text('🧠 Read a screenshot', 'ask:screenshot')
   .row()
   .text('🕵️ Is this a scam?', 'scamcheck')
+  .text('🧱 Red-flag wall', 'wall')
   .row()
   .text('✅ Verify yourself', 'verifyme')
   .row()
@@ -577,6 +578,33 @@ async function main(): Promise<void> {
   bot.command('id', (ctx) =>
     ctx.reply(`🪪 Your Telegram ID: <code>${ctx.from?.id}</code>`, { parse_mode: 'HTML' }),
   );
+
+  // "Wall of Red Flags" — anonymized recent community flags (no names). The daily-open feed.
+  const ago = (iso: string): string => {
+    const mins = Math.max(1, Math.round((Date.now() - Date.parse(iso)) / 60000));
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.round(hrs / 24)}d ago`;
+  };
+  async function showWall(ctx: Context): Promise<void> {
+    const items = await recentFlags(20).catch(() => []);
+    if (items.length === 0) {
+      await ctx.reply('🧱 <b>The Wall is quiet</b> — no flags yet. Be the first to warn the community 🚩', { parse_mode: 'HTML' });
+      return;
+    }
+    const lines = ['🧱 <b>WALL OF RED FLAGS</b>', '<i>Anonymous, community-reported. No names — just the tea. ☕</i>', ''];
+    for (const it of items) {
+      lines.push(`${FLAG_LABELS[it.category]}${it.state ? ` · ${escapeHtml(it.state)}` : ''} · <i>${ago(it.at)}</i>`);
+    }
+    lines.push('', '<i>Every flag is one person’s own experience, unverified. 🔍 Check anyone to see if they’re on here.</i>');
+    await ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔍 Check someone', 'check:new') });
+  }
+  bot.command('wall', (ctx) => (guard(ctx) ? showWall(ctx) : undefined));
+  bot.callbackQuery('wall', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await showWall(ctx);
+  });
   bot.command('check', (ctx) => (guard(ctx) ? ctx.reply('Who are we checking? Pick one 👇', withMenu) : undefined));
 
   const skipCityKb = new InlineKeyboard().text('⏭ Skip — no city', 'skipcity');
