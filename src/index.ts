@@ -55,6 +55,33 @@ const pendingVerify = new Set<number>();
 /** Users who tapped "Is this a scam?" — their next message is the text to judge. */
 const pendingScam = new Set<number>();
 
+/**
+ * Who each user is allowed to anonymously relay to — populated ONLY when a real
+ * "same person" match happens. Never trust the id from callback data (that would
+ * let anyone message any Telegram user). uid → set of allowed counterpart ids.
+ */
+const relayAllowed = new Map<number, Set<number>>();
+function allowRelay(a: number, b: number): void {
+  if (!relayAllowed.has(a)) relayAllowed.set(a, new Set());
+  relayAllowed.get(a)!.add(b);
+}
+
+/**
+ * Clear every "next message is captured for X" mode for a user. Called whenever a
+ * user starts a NEW action, so the eight capture modes can't collide and misroute
+ * a message (e.g. paste a scam text and have it saved as your profile name).
+ */
+function resetTextModes(uid: number): void {
+  pendingInput.delete(uid);
+  pendingCity.delete(uid);
+  pendingLabel.delete(uid);
+  pendingRelay.delete(uid);
+  pendingScreenshot.delete(uid);
+  pendingVerify.delete(uid);
+  pendingScam.delete(uid);
+  pendingPick.delete(uid);
+}
+
 /** Stars price (⭐) for 30 days of the ✅ Verified badge — the second-audience revenue. */
 const BADGE_STARS = 599;
 
@@ -529,6 +556,7 @@ async function runPerson(ctx: Context, seed: Subject): Promise<void> {
     if (candidates && candidates.length >= 2) {
       const distinctPlaces = new Set(candidates.map((c) => `${c.city ?? ''}|${c.state ?? ''}`));
       if (distinctPlaces.size >= 2) {
+        resetTextModes(uid);
         pendingPick.set(uid, { candidates, raw: seed.raw });
         const lines = candidates.map(
           (c, i) =>
@@ -625,6 +653,7 @@ async function main(): Promise<void> {
   async function askCityOrRun(ctx: Context, seed: Subject): Promise<void> {
     const uid = ctx.from!.id;
     if (seed.kind === 'person' && !seed.hints) {
+      resetTextModes(uid);
       pendingCity.set(uid, seed.raw);
       await ctx.reply(
         `📍 <b>What city or state are they in?</b>\n<i>This makes the report WAY fuller — a name with no city usually comes back thin.</i>`,
@@ -675,9 +704,10 @@ async function main(): Promise<void> {
       await ctx.reply('Search someone first, then tap 🏷️ on their report.');
       return;
     }
+    resetTextModes(ctx.from.id);
     pendingLabel.add(ctx.from.id);
     await ctx.reply(
-      'What name do you know them by, or how are they saved in your phone?\n<i>(one short label — e.g. “Mike from Hinge” or “Danny — realtor”)</i>',
+      'What name do you know them by, or how are they saved in your phone?\n<i>(one short label — e.g. “Mike from Hinge” or “Danny — realtor”. /cancel to back out.)</i>',
       { parse_mode: 'HTML' },
     );
   });
@@ -719,10 +749,10 @@ async function main(): Promise<void> {
   bot.callbackQuery('ask:screenshot', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!guard(ctx)) return;
+    resetTextModes(ctx.from.id);
     pendingScreenshot.add(ctx.from.id);
-    pendingInput.delete(ctx.from.id);
     await ctx.reply(
-      '🧠 <b>Screenshot the tea and send it over</b> 📸\nHis dating profile, or your chat with them. I’ll read it for love-bombing, scam scripts, “taken” tells, and anything that doesn’t add up.\n<i>I only read what you send — nothing’s stored.</i>',
+      '🧠 <b>Screenshot the tea and send it over</b> 📸\nTheir dating profile, or your chat with them. I’ll read it for love-bombing, scam scripts, “taken” tells, and anything that doesn’t add up.\n<i>I only read what you send — nothing’s stored. /cancel to back out.</i>',
       { parse_mode: 'HTML' },
     );
   });
@@ -733,11 +763,8 @@ async function main(): Promise<void> {
     if (!guard(ctx)) return;
     const kind = ctx.match![1] as SubjectKind;
     const uid = ctx.from.id;
-    if (kind === 'image') {
-      pendingInput.delete(uid);
-    } else {
-      pendingInput.set(uid, kind);
-    }
+    resetTextModes(uid); // starting a fresh input clears any other capture mode
+    if (kind !== 'image') pendingInput.set(uid, kind);
     await ctx.reply(ASK_PROMPT[kind] ?? 'Send it over 👇', { parse_mode: 'HTML' });
   });
 
@@ -840,6 +867,10 @@ async function main(): Promise<void> {
       { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('💬 Send them an anonymous note', `relay:${matches[0]}`) },
     );
     for (const other of matches) {
+      // Authorize the anonymous channel BOTH ways — only these two can relay to
+      // each other. Never trust an id supplied in callback data.
+      allowRelay(ctx.from.id, other);
+      allowRelay(other, ctx.from.id);
       await bot.api
         .sendMessage(
           other,
@@ -860,9 +891,16 @@ async function main(): Promise<void> {
   bot.callbackQuery(/^relay:(\d+)$/, async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!guard(ctx)) return;
-    pendingRelay.set(ctx.from.id, Number(ctx.match![1]));
+    const target = Number(ctx.match![1]);
+    // Only relay to a counterpart from a real match — blocks messaging arbitrary ids.
+    if (!relayAllowed.get(ctx.from.id)?.has(target)) {
+      await ctx.reply('That conversation isn’t available anymore. Tap 🤝 on a report to connect.');
+      return;
+    }
+    resetTextModes(ctx.from.id);
+    pendingRelay.set(ctx.from.id, target);
     await ctx.reply(
-      '💬 <b>Type your message</b> and I’ll pass it along anonymously.\n<i>Be kind and stick to your own experience — messages are between real people. Nothing you type reveals who you are.</i>',
+      '💬 <b>Type your message</b> and I’ll pass it along anonymously.\n<i>Be kind and stick to your own experience — messages are between real people. Nothing you type reveals who you are. Send /cancel to back out.</i>',
       { parse_mode: 'HTML' },
     );
   });
@@ -892,6 +930,7 @@ async function main(): Promise<void> {
   bot.callbackQuery('verifyme', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!guard(ctx)) return;
+    resetTextModes(ctx.from.id);
     pendingVerify.add(ctx.from.id);
     await ctx.reply(
       [
@@ -959,9 +998,10 @@ async function main(): Promise<void> {
   bot.callbackQuery('scamcheck', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!guard(ctx)) return;
+    resetTextModes(ctx.from.id);
     pendingScam.add(ctx.from.id);
     await ctx.reply(
-      '🕵️ <b>Paste the message</b> they sent you and I’ll tell you if it smells like a scam.\n<i>I read only what you paste — nothing stored.</i>',
+      '🕵️ <b>Paste the message</b> they sent you and I’ll tell you if it smells like a scam.\n<i>I read only what you paste — nothing stored. /cancel to back out.</i>',
       { parse_mode: 'HTML' },
     );
   });
@@ -1004,8 +1044,15 @@ async function main(): Promise<void> {
   bot.callbackQuery('check:new', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!guard(ctx)) return;
-    pendingInput.delete(ctx.from.id);
+    resetTextModes(ctx.from.id);
     await ctx.reply('🔍 <b>Who’s next?</b> Pick what you’ve got 👇', { parse_mode: 'HTML', reply_markup: mainMenu });
+  });
+
+  // Universal escape hatch out of any capture mode.
+  bot.command('cancel', (ctx) => {
+    if (!ctx.from) return;
+    resetTextModes(ctx.from.id);
+    return ctx.reply('👌 Okay, cancelled. What next?', { reply_markup: mainMenu });
   });
 
   // "👀 See who I’m watching" tapped → show the watchlist, no typing.
@@ -1545,6 +1592,12 @@ async function main(): Promise<void> {
     if (pendingRelay.has(uid) && !text.startsWith('/')) {
       const target = pendingRelay.get(uid)!;
       pendingRelay.delete(uid);
+      // Guard again at send time — only a genuinely matched counterpart.
+      if (!relayAllowed.get(uid)?.has(target)) {
+        await ctx.reply('That conversation isn’t available anymore.');
+        return;
+      }
+      allowRelay(target, uid); // let them reply back
       const sent = await bot.api
         .sendMessage(
           target,
@@ -1628,6 +1681,10 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Starting a fresh free-text search — drop any stale capture modes so a later
+    // photo/number isn't hijacked by an abandoned screenshot/pick prompt.
+    pendingScreenshot.delete(uid);
+    pendingPick.delete(uid);
     // Person with no city → guide them to add one; everything else runs now.
     await askCityOrRun(ctx, seed);
   });
