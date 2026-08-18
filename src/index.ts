@@ -792,23 +792,32 @@ async function main(): Promise<void> {
   // to see their field names. Usage: /probem Mikhail Parizher | Jersey City NJ
   const probeDedicated = async (ctx: Context, which: 'marriage' | 'criminal') => {
     if (!guard(ctx)) return;
+    if (!config.enformionName || !config.enformionPassword) return void (await ctx.reply('Enformion creds not set.'));
     const arg = ctx.match?.toString().trim();
     if (!arg) return void (await ctx.reply(`Usage: /probe${which === 'marriage' ? 'm' : 'c'} First Last | City ST`));
     const [name, city] = arg.split('|').map((s) => s.trim());
     const parts = (name ?? '').split(/\s+/);
     const st = city?.split(/\s+/).pop();
     const body = { FirstName: parts[0], LastName: parts[parts.length - 1], ...(st ? { State: st } : {}) };
-    const paths = which === 'marriage' ? ['/MarriageSearch', '/Marriage/Search', '/Marriage'] : ['/CriminalSearch', '/CriminalSearchV2', '/Criminal/Search', '/Criminal'];
-    const types = which === 'marriage' ? ['Marriage', 'DevAPIMarriage', 'MarriageSearch'] : ['Criminal', 'CriminalV2', 'DevAPICriminalV2', 'DevAPICriminal'];
-    const data = await enformionRaw(paths, types, body).catch(() => null);
-    if (!data) return void (await ctx.reply('❌ No endpoint responded (all paths/types 404’d or errored).'));
-    const topKeys = Object.keys(data).join(', ');
-    const arrKey = Object.keys(data).find((k) => Array.isArray((data as Record<string, unknown>)[k]));
-    const first = arrKey ? ((data as Record<string, unknown[]>)[arrKey]![0] as Record<string, unknown>) : undefined;
-    await ctx.reply(
-      [`✅ responded.`, `top keys: <code>${escapeHtml(topKeys)}</code>`, arrKey ? `array "${arrKey}"[0] keys: <code>${escapeHtml(Object.keys(first ?? {}).join(', '))}</code>` : 'no array found'].join('\n\n').slice(0, 4000),
-      { parse_mode: 'HTML' },
-    );
+    const path = which === 'marriage' ? '/MarriageSearch' : '/CriminalSearchV2';
+    const types = which === 'marriage' ? ['Marriage', 'DevAPIMarriage', 'MarriageSearch', ''] : ['Criminal', 'CriminalV2', 'DevAPICriminalV2', 'DevAPICriminal', ''];
+    const out: string[] = [`Endpoint: <code>${path}</code>`, ''];
+    for (const stype of types) {
+      try {
+        const res = await fetch(`https://devapi.enformion.com${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'galaxy-ap-name': config.enformionName, 'galaxy-ap-password': config.enformionPassword, 'galaxy-search-type': stype },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(15_000),
+        });
+        const txt = (await res.text()).slice(0, 160);
+        out.push(`type "<b>${escapeHtml(stype || '(none)')}</b>" → <b>HTTP ${res.status}</b>: <code>${escapeHtml(txt)}</code>`);
+        if (res.ok) break;
+      } catch (e) {
+        out.push(`type "${escapeHtml(stype || '(none)')}" → ERROR ${escapeHtml(e instanceof Error ? e.message : String(e))}`);
+      }
+    }
+    await ctx.reply(out.join('\n\n').slice(0, 4000), { parse_mode: 'HTML' });
   };
   bot.command('probem', (ctx) => probeDedicated(ctx, 'marriage'));
   bot.command('probec', (ctx) => probeDedicated(ctx, 'criminal'));
