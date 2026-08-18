@@ -21,7 +21,7 @@ import { chunkText, escapeHtml, type LockedSection, missingSelectors, renderFind
 import { renderCardPng } from './media/card.js';
 import { generateDateQuestions } from './core/predate.js';
 import { analyzeScamText } from './core/scamtext.js';
-import { type Candidate, enformionCandidates } from './sources/enformion.js';
+import { type Candidate, enformionCandidates, enformionSource } from './sources/enformion.js';
 import { ALL_SOURCES } from './sources/index.js';
 import { warmOfac } from './sources/ofac.js';
 
@@ -654,6 +654,35 @@ async function main(): Promise<void> {
       '❌ = not connected — that data can’t appear until its key is set on Render.',
     ];
     return ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+  });
+
+  // Live Enformion probe — actually calls the API so we can see WHY deep data
+  // (marriage/relatives) is or isn't coming back. Usage: /probe Mike Parizher | Ashburn VA
+  bot.command('probe', async (ctx) => {
+    if (!guard(ctx)) return;
+    const arg = ctx.match?.toString().trim();
+    if (!arg) {
+      await ctx.reply('Usage: <code>/probe Full Name | City ST</code>', { parse_mode: 'HTML' });
+      return;
+    }
+    const [name, city] = arg.split('|').map((s) => s.trim());
+    const note = await ctx.reply('🔬 Probing Enformion…');
+    try {
+      const seed: Subject = { raw: name ?? arg, kind: 'person', value: name ?? arg, hints: city };
+      const res = await enformionSource.run(seed, { now: new Date().toISOString(), hints: city });
+      await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+      if (res === null) {
+        await ctx.reply('❌ Enformion returned <b>null</b> — credentials missing/blank, or the name couldn’t be parsed.', { parse_mode: 'HTML' });
+      } else if (res.length === 0) {
+        await ctx.reply('🟡 Enformion <b>connected OK</b> but found <b>no match</b> for that name. Add a city/state or use the exact legal spelling.', { parse_mode: 'HTML' });
+      } else {
+        const titles = res.slice(0, 8).map((f) => `• ${escapeHtml(f.label)}: ${escapeHtml(f.title)}`);
+        await ctx.reply([`✅ Enformion returned <b>${res.length}</b> finding(s):`, '', ...titles].join('\n'), { parse_mode: 'HTML' });
+      }
+    } catch (err) {
+      await ctx.api.deleteMessage(note.chat.id, note.message_id).catch(() => {});
+      await ctx.reply(`❌ Enformion ERROR: <code>${escapeHtml(err instanceof Error ? err.message : String(err))}</code>`, { parse_mode: 'HTML' });
+    }
   });
 
   // "Wall of Red Flags" — anonymized recent community flags (no names). The daily-open feed.
