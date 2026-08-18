@@ -204,6 +204,21 @@ export function parseEnformionPerson(
   const findings: Finding[] = [];
   const displayName = nameOf(p) || opts.subjectRaw;
 
+    // Honor Enformion's own opt-out flag — if the subject removed themselves at
+    // the source, show nothing (compliance).
+    if (truthy(get(p, 'isOptedOut', 'IsOptedOut')) || truthy(get(p, 'isEnterpriseOptedOut'))) {
+      return [
+        {
+          source: 'enformion',
+          label: 'Deep background',
+          title: '🛡️ This person opted out of public-records lookups',
+          detail: 'They removed themselves from the data source, so their detailed profile isn’t available.',
+          retrievedAt: ctx.now,
+          confidence: 0.5,
+        },
+      ];
+    }
+
     // Wrong-person guard. Aggregators fall back to a "closest" record when there
     // is no real match — which is how a search for "Ariel Voskin" returned
     // "Michael Voskian" and showed a stranger's family and emails as his. The
@@ -231,7 +246,23 @@ export function parseEnformionPerson(
     const where = a0 ? `${str(get(a0, 'City', 'city')) ?? ''} ${str(get(a0, 'State', 'state')) ?? ''}`.trim() : '';
     const age = str(get(p, 'Age', 'age'));
     const dob = str(get(p, 'Dob', 'dob', 'DateOfBirth'));
-    const akas = arr(get(p, 'Akas', 'akas', 'AKAs')).map(nameOf).filter(Boolean);
+    const akaSeen = new Set<string>();
+    const akas = [...arr(get(p, 'Akas', 'akas', 'AKAs')), ...arr(get(p, 'MergedNames', 'mergedNames'))]
+      .map(nameOf)
+      .filter((n) => n && n.toLowerCase() !== displayName.toLowerCase() && !akaSeen.has(n.toLowerCase()) && akaSeen.add(n.toLowerCase()));
+
+    // Death record on a supposedly-live match = classic stolen/reused identity.
+    const deaths = arr(get(p, 'DatesOfDeath', 'datesOfDeath'));
+    if (deaths.length) {
+      findings.push({
+        source: 'enformion',
+        label: 'Criminal record', // routes into the Safety bucket
+        title: '⚰️ 🔴 A death record is on file for this identity',
+        detail: 'If the person you’re talking to is alive, their identity may be stolen or reused — a serious catfish/scam red flag. Confirm with a live video call.',
+        retrievedAt: ctx.now,
+        confidence: 0.6,
+      });
+    }
 
     findings.push({
       source: 'enformion',
