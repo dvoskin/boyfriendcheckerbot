@@ -44,6 +44,10 @@ export const config = {
   tineyeKey: opt('TINEYE_API_KEY'),
   // Pipl — deep identity resolution (email/name → social, phones, jobs).
   piplKey: opt('PIPL_API_KEY'),
+  // EmailRep.io — email reputation / suspiciousness (free; key lifts limits).
+  emailRepKey: opt('EMAILREP_API_KEY'),
+  // IPQualityScore — phone/email fraud + burner/disposable detection (free tier).
+  ipqsKey: opt('IPQS_API_KEY'),
   dataDir: process.env.DATA_DIR ?? './data',
   // How often the watch loop re-checks each watched person, in minutes.
   watchIntervalMin: Number(process.env.WATCH_INTERVAL_MIN ?? '360'),
