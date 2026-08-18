@@ -10,6 +10,7 @@ import { reverseImageSearch } from './media/reverse.js';
 import { spentToday } from './core/budget.js';
 import { writeDossier } from './core/dossier.js';
 import { addFlag, addLabel, type FlagCategory, FLAG_LABELS, lookupFlags, subjectKeys } from './core/flags.js';
+import { applyReferral, balanceOf, claimDaily, COST, grantStarter, inviteCount, spend, TOKENS } from './core/wallet.js';
 import { buildGraph } from './core/graph.js';
 import { addWatch, allWatches, listWatches, removeWatch, updateBaseline } from './core/watch.js';
 import { escapeHtml, renderFindings, renderGraph, renderImageReport, renderProgress, renderReport, synthesize } from './report.js';
@@ -31,6 +32,29 @@ const lastSearched = new Map<number, { seed: Subject; keys: string[] }>();
 
 /** Users we asked "how do you know them?" — their next message is the label. */
 const pendingLabel = new Set<number>();
+
+/** The bot's @username, for building referral links. Set at startup. */
+let botUsername = 'YourCheckmateBot';
+
+/** Out-of-tokens prompt with the ways to earn more (the retention loop). */
+async function earnMore(ctx: Context): Promise<void> {
+  const kb = new InlineKeyboard()
+    .text('🎁 Daily reward', 'daily')
+    .text('👯 Invite friends', 'invite')
+    .row()
+    .text('💎 Buy tokens', 'buy');
+  await ctx.reply(
+    [
+      '💸 <b>Out of tokens!</b>',
+      '',
+      'Grab more — it’s easy:',
+      `🎁 <b>Daily reward</b> — come back every day for free tokens (streaks give bonuses!)`,
+      `👯 <b>Invite friends</b> — you both get tokens`,
+      `💎 <b>Buy a pack</b> — instant top-up`,
+    ].join('\n'),
+    { parse_mode: 'HTML', reply_markup: kb },
+  );
+}
 
 /** The tap-to-choose input menu — removes the guesswork of free-text parsing. */
 const mainMenu = new InlineKeyboard()
@@ -111,6 +135,11 @@ const HELP = [
   '🔔 Want me to <b>keep watching</b> someone? Send <code>/watch @handle</code> and I’ll ping you when anything changes.',
   '   (see them with <code>/watchlist</code>, stop with <code>/unwatch</code>)',
   '',
+  '💎 Each check spends a few <b>tokens</b>. Top up free anytime:',
+  '   🎁 <code>/daily</code> — free tokens every day (streaks = bonuses!)',
+  '   👯 <code>/invite</code> — you + your friend both get tokens',
+  '   💰 <code>/balance</code> — see your tokens',
+  '',
   '<i>Not sure? Just send their @ or their name and see. Try  torvalds  to test me. 😉</i>',
 ].join('\n');
 
@@ -173,6 +202,12 @@ async function handleLookup(ctx: Context, subject: Subject): Promise<void> {
   const applicable = ALL_SOURCES.filter((s) => s.accepts.includes(subject.kind));
   if (applicable.length === 0) {
     await ctx.reply(`No sources handle "${subject.kind}" yet.`);
+    return;
+  }
+
+  const cost = COST[subject.kind as keyof typeof COST] ?? 10;
+  if (!(await spend(ctx.from!.id, cost))) {
+    await earnMore(ctx);
     return;
   }
 
@@ -260,6 +295,14 @@ const TRACE_STEPS = [
  * never has to learn a command — sending "@johndoe" just works.
  */
 async function runTrace(ctx: Context, seed: Subject): Promise<void> {
+  // Meter the search against the token wallet — the scarcity that drives the
+  // daily-return + referral + purchase loops.
+  const cost = COST[seed.kind as keyof typeof COST] ?? 10;
+  if (!(await spend(ctx.from!.id, cost))) {
+    await earnMore(ctx);
+    return;
+  }
+
   const status = await ctx.reply('💅 On it, bestie — give me a sec…', { parse_mode: 'HTML' });
   let step = 0;
   const tick = setInterval(() => {
@@ -387,11 +430,35 @@ async function main(): Promise<void> {
 
   const withMenu = { parse_mode: 'HTML', reply_markup: mainMenu } as const;
 
-  bot.command('start', (ctx) =>
-    consented.has(ctx.from?.id ?? 0)
-      ? ctx.reply(HELP, withMenu)
-      : ctx.reply(TERMS, { parse_mode: 'HTML' }),
-  );
+  bot.command('start', async (ctx) => {
+    const uid = ctx.from?.id;
+    if (!uid) return;
+    // Referral deep link: t.me/Bot?start=ref_<id> — credit both sides once.
+    const payload = (ctx.match ?? '').toString().trim();
+    const refMatch = /^ref_(\d+)$/.exec(payload);
+    if (refMatch) {
+      const referrer = Number(refMatch[1]);
+      const applied = await applyReferral(uid, referrer);
+      if (applied) {
+        await ctx.reply(
+          `🎉 You came in on a friend’s invite — <b>+${TOKENS.referred} tokens</b> for you, and they got <b>+${TOKENS.referrer}</b> too. Sweet start 💛`,
+          { parse_mode: 'HTML' },
+        );
+        await bot.api
+          .sendMessage(referrer, `👯 Someone joined with your invite — <b>+${TOKENS.referrer} tokens</b> for you! Keep sharing 💅`, {
+            parse_mode: 'HTML',
+          })
+          .catch(() => {});
+      }
+    }
+    const granted = await grantStarter(uid);
+    if (granted > 0) {
+      await ctx.reply(`🎁 Welcome gift: <b>${granted} tokens</b> to start checking. Each search spends a few — top up free anytime with /daily 💛`, {
+        parse_mode: 'HTML',
+      });
+    }
+    return consented.has(uid) ? ctx.reply(HELP, withMenu) : ctx.reply(TERMS, { parse_mode: 'HTML' });
+  });
   bot.command('help', (ctx) => ctx.reply(HELP, withMenu));
   bot.command('check', (ctx) => (guard(ctx) ? ctx.reply('Who are we checking? Pick one 👇', withMenu) : undefined));
 
@@ -495,6 +562,89 @@ async function main(): Promise<void> {
     await ctx.reply(
       `💰 <b>Today's spend:</b> $${spent.toFixed(2)} / $${cap.toFixed(2)} (${pct}%)\n${spent >= cap ? '🔒 Paid sources paused until midnight.' : '✅ Paid sources active.'}`,
       { parse_mode: 'HTML' },
+    );
+  });
+
+  // ── Retention: wallet, daily streak, referrals ──────────────────────────
+  const earnKb = () =>
+    new InlineKeyboard().text('🎁 Daily reward', 'daily').text('👯 Invite friends', 'invite');
+
+  async function showBalance(ctx: Context): Promise<void> {
+    const uid = ctx.from!.id;
+    const [bal, invited] = await Promise.all([balanceOf(uid), inviteCount(uid)]);
+    await ctx.reply(
+      [
+        `💎 <b>Your tokens:</b> ${bal}`,
+        `👯 <b>Friends invited:</b> ${invited}`,
+        '',
+        'Top up free: /daily every day, /invite your friends 💛',
+      ].join('\n'),
+      { parse_mode: 'HTML', reply_markup: earnKb() },
+    );
+  }
+
+  async function doDaily(ctx: Context): Promise<void> {
+    const r = await claimDaily(ctx.from!.id);
+    if (!r.ok) {
+      await ctx.reply(`✨ Already claimed today — come back tomorrow to keep your <b>${r.streak}-day streak</b> alive! 🔥\n💎 Balance: ${r.balance}`, {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('👯 Invite for more', 'invite'),
+      });
+      return;
+    }
+    const streakLine =
+      r.streak % 7 === 0
+        ? `🔥🔥 <b>${r.streak}-day streak!</b> Huge bonus unlocked!`
+        : r.streak % 3 === 0
+          ? `🔥 <b>${r.streak}-day streak!</b> Bonus tokens added!`
+          : `🔥 <b>${r.streak}-day streak</b> — keep it going!`;
+    await ctx.reply([`🎁 <b>+${r.gained} tokens!</b>`, streakLine, `💎 Balance: ${r.balance}`].join('\n'), {
+      parse_mode: 'HTML',
+      reply_markup: mainMenu,
+    });
+  }
+
+  async function doInvite(ctx: Context): Promise<void> {
+    const uid = ctx.from!.id;
+    const invited = await inviteCount(uid);
+    const link = `https://t.me/${botUsername}?start=ref_${uid}`;
+    await ctx.reply(
+      [
+        '👯 <b>Invite friends, both get tokens</b>',
+        '',
+        `Every friend who joins with your link = <b>+${TOKENS.referrer} tokens</b> for you, <b>+${TOKENS.referred}</b> for them.`,
+        `You’ve invited <b>${invited}</b> so far.`,
+        '',
+        '📩 Share your link:',
+        `<code>${link}</code>`,
+      ].join('\n'),
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().url(
+          '📤 Share the link',
+          `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent('Check anyone you’re dating before you meet them 👀 — try Checkmate:')}`,
+        ),
+      },
+    );
+  }
+
+  bot.command('balance', (ctx) => (guard(ctx) ? showBalance(ctx) : undefined));
+  bot.command('daily', (ctx) => (guard(ctx) ? doDaily(ctx) : undefined));
+  bot.command('invite', (ctx) => (guard(ctx) ? doInvite(ctx) : undefined));
+
+  bot.callbackQuery('daily', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await doDaily(ctx);
+  });
+  bot.callbackQuery('invite', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (guard(ctx)) await doInvite(ctx);
+  });
+  bot.callbackQuery('buy', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    await ctx.reply(
+      '💎 <b>Token packs are coming very soon!</b>\nFor now, load up free with /daily and /invite — you can stack a big balance 💛',
+      { parse_mode: 'HTML', reply_markup: earnKb() },
     );
   });
 
@@ -654,6 +804,10 @@ async function main(): Promise<void> {
   // re-encodes them and strips EXIF on the way through.
   bot.on(['message:document', 'message:photo'], async (ctx) => {
     if (!guard(ctx)) return;
+    if (!(await spend(ctx.from!.id, COST.image))) {
+      await earnMore(ctx);
+      return;
+    }
     const isPhoto = Boolean(ctx.message?.photo);
     const note = await ctx.reply(
       isPhoto
@@ -811,6 +965,22 @@ async function main(): Promise<void> {
 
   const intervalMs = Math.max(5, config.watchIntervalMin) * 60_000;
   setInterval(() => void runWatchSweep(), intervalMs);
+
+  // Learn our own @username (for referral links) and publish the command menu.
+  try {
+    const me = await bot.api.getMe();
+    if (me.username) botUsername = me.username;
+    await bot.api.setMyCommands([
+      { command: 'check', description: '🔍 Check someone new' },
+      { command: 'balance', description: '💎 Your tokens' },
+      { command: 'daily', description: '🎁 Claim free daily tokens' },
+      { command: 'invite', description: '👯 Invite friends, earn tokens' },
+      { command: 'watchlist', description: '👀 People you’re watching' },
+      { command: 'help', description: '💛 How to use Checkmate' },
+    ]);
+  } catch {
+    // Non-fatal — the bot still runs with the default fallback username.
+  }
 
   console.log(`recon-bot up — ${ALL_SOURCES.length} sources registered, watch sweep every ${config.watchIntervalMin}min`);
   await bot.start();
