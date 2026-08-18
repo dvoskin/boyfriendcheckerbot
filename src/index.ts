@@ -810,9 +810,9 @@ async function main(): Promise<void> {
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(15_000),
         });
-        const txt = (await res.text()).slice(0, 160);
+        const txt = (await res.text()).slice(0, 700);
         out.push(`type "<b>${escapeHtml(stype || '(none)')}</b>" → <b>HTTP ${res.status}</b>: <code>${escapeHtml(txt)}</code>`);
-        if (res.ok) break;
+        if (res.ok || res.status === 400) break; // 400 tells us the real error — stop and show it
       } catch (e) {
         out.push(`type "${escapeHtml(stype || '(none)')}" → ERROR ${escapeHtml(e instanceof Error ? e.message : String(e))}`);
       }
